@@ -38,6 +38,12 @@ from src.ui.crud_views import (
 )
 from src.ui.toast_manager import ToastManager, ToastType
 
+# Importar SoundManager
+try:
+    from src.ui.sound_manager import SoundManager
+except ImportError:
+    SoundManager = None
+
 # Detectar modo de ejecución
 IS_WEB = "--web" in sys.argv or "-w" in sys.argv
 API_PORT = 8765
@@ -165,6 +171,11 @@ def main(page: ft.Page):
     
     ToastManager.initialize(page, theme_getter=get_toast_theme)
     
+    # ============ CARGAR CONFIGURACIÓN DE SONIDOS ============
+    sounds_enabled = db.get_config('enable_sounds') == 'true'
+    if SoundManager:
+        SoundManager.set_enabled(sounds_enabled)
+    
     chart_mgr = ChartManager(max_points=60)
     update_interval = 1.0
     current_view = "resumen"
@@ -188,6 +199,7 @@ def main(page: ft.Page):
     gpu_temp_text = ft.Text("Temp: --°C", size=13, color=GREEN_PRIMARY)
     gpu_progress = create_circular_progress(0, ORANGE_PRIMARY, 100)
     gpu_name_text = ft.Text("GPU/Temp: Detectando...", size=14, weight=ft.FontWeight.W_500, color=TEXT_WHITE)
+    gpu_details_container = ft.Column(spacing=10)  # Contenedor para detalles de GPU
 
     # ============ VALORES DE DISCO ============
     disk_name_text = ft.Text("Disco: Detectando...", size=14, weight=ft.FontWeight.W_500, color=TEXT_WHITE)
@@ -200,11 +212,13 @@ def main(page: ft.Page):
     net_upload_history = []
     net_time_labels = []
     network_chart_container = ft.Container(height=180)
+    net_details_container = ft.Column(spacing=10)  # Contenedor para detalles de red
+    net_stats_row = ft.Row(spacing=15)  # Estadísticas en tiempo real de red
 
     # ============ STATUS BAR ============
     mode_indicator = "🌐 WEB (Datos Reales)" if IS_WEB else "🖥️ Escritorio"
     status_text = ft.Text(f"Status: Conectado | {mode_indicator}", size=12, color=BLUE_PRIMARY)
-    version_text = ft.Text("Versión 2.2.0", size=12, color=TEXT_GRAY)
+    version_text = ft.Text("Versión 2.3.0", size=12, color=TEXT_GRAY)
 
     # ============ CONTENEDORES DE DETALLES (EXPANDIBLES) ============
     cpu_details_container = ft.Column(spacing=10)
@@ -287,11 +301,167 @@ def main(page: ft.Page):
             ft.Column(part_items, spacing=5)
         ]
         
-        # No llamamos update() aquí porque están dentro de las cards que quizas no estén en view
-        # O si, deberíamos si queremos refresco en tiempo real
+        # --- GPU DETALLES ---
+        gpu_info = monitor.get_gpu_info()
+        gpu_items = []
+        
+        if gpu_info:
+            gpu_items = [
+                ft.Row([
+                    ft.Text("Nombre:", size=12, color=theme["text_secondary"]),
+                    ft.Text(gpu_info.get('name', 'GPU')[:35], size=12, color=theme["text_primary"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Row([
+                    ft.Text("Uso:", size=12, color=theme["text_secondary"]),
+                    ft.Text(f"{gpu_info.get('usage', 0):.1f}%", size=12, color=theme["accent_orange"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Row([
+                    ft.Text("Temperatura:", size=12, color=theme["text_secondary"]),
+                    ft.Text(f"{gpu_info.get('temp', 0):.0f}°C", size=12, 
+                           color=theme["accent_red"] if gpu_info.get('temp', 0) > 70 else theme["text_primary"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Row([
+                    ft.Text("Estado:", size=12, color=theme["text_secondary"]),
+                    ft.Text("Activa", size=12, color=theme["accent_green"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ]
+        else:
+            gpu_items = [
+                ft.Row([
+                    ft.Text("Estado:", size=12, color=theme["text_secondary"]),
+                    ft.Text("GPU Integrada / No detectada", size=12, color=theme["text_primary"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Row([
+                    ft.Text("Info:", size=12, color=theme["text_secondary"]),
+                    ft.Text("Uso CPU como referencia", size=12, color=theme["text_secondary"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ]
+        
+        gpu_details_container.controls = [
+            ft.Divider(color=theme["border_primary"]),
+            ft.Column(gpu_items, spacing=5)
+        ]
+        
+        # --- RED DETALLES ---
+        net_info = monitor.get_network_info()
+        net_speed = monitor.get_network_speed()
+        
+        # Calcular velocidades actuales
+        down_speed = net_speed.get('download', 0) / (1024 * 1024)  # MB/s
+        up_speed = net_speed.get('upload', 0) / (1024 * 1024)  # MB/s
+        
+        # Interfaces de red
+        interfaces = net_info.get('interfaces', [])
+        
+        net_items = [
+            ft.Text("📊 Tráfico en Tiempo Real:", size=12, weight=ft.FontWeight.BOLD, color=theme["text_secondary"]),
+            ft.Row([
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.ARROW_DOWNWARD, color=theme["accent_green"], size=16),
+                            ft.Text("Descarga", size=11, color=theme["text_secondary"]),
+                        ], spacing=5),
+                        ft.Text(f"{down_speed:.2f} MB/s", size=16, weight=ft.FontWeight.BOLD, color=theme["accent_green"]),
+                    ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor=theme["bg_hover"],
+                    padding=10,
+                    border_radius=8,
+                    expand=True,
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.ARROW_UPWARD, color=theme["accent_orange"], size=16),
+                            ft.Text("Subida", size=11, color=theme["text_secondary"]),
+                        ], spacing=5),
+                        ft.Text(f"{up_speed:.2f} MB/s", size=16, weight=ft.FontWeight.BOLD, color=theme["accent_orange"]),
+                    ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor=theme["bg_hover"],
+                    padding=10,
+                    border_radius=8,
+                    expand=True,
+                ),
+            ], spacing=10),
+            ft.Container(height=10),
+            ft.Text("🌐 Interfaces de Red:", size=12, weight=ft.FontWeight.BOLD, color=theme["text_secondary"]),
+        ]
+        
+        # Agregar cada interfaz
+        for iface in interfaces[:3]:  # Máximo 3 interfaces
+            iface_name = iface.get('name', 'Unknown')
+            iface_ip = iface.get('ip', 'N/A')
+            iface_speed = iface.get('speed', 0)
+            
+            net_items.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.WIFI if 'wl' in iface_name.lower() else ft.Icons.CABLE, 
+                               color=theme["accent_blue"], size=18),
+                        ft.Column([
+                            ft.Text(iface_name, size=12, weight=ft.FontWeight.BOLD, color=theme["text_primary"]),
+                            ft.Text(f"IP: {iface_ip}", size=10, color=theme["text_secondary"]),
+                        ], spacing=0, expand=True),
+                        ft.Text(f"{iface_speed} Mbps" if iface_speed else "N/A", 
+                               size=11, color=theme["text_secondary"]),
+                    ], spacing=10),
+                    bgcolor=theme["bg_hover"],
+                    padding=10,
+                    border_radius=8,
+                    margin=ft.Margin(0, 5, 0, 0),
+                )
+            )
+        
+        if not interfaces:
+            net_items.append(
+                ft.Text("No se detectaron interfaces activas", size=11, color=theme["text_secondary"])
+            )
+        
+        # Estadísticas acumuladas de la sesión
+        total_down = sum(net_download_history) / 100 if net_download_history else 0  # Convertir de escala
+        total_up = sum(net_upload_history) / 100 if net_upload_history else 0
+        
+        net_items.extend([
+            ft.Container(height=10),
+            ft.Text("📈 Estadísticas de Sesión:", size=12, weight=ft.FontWeight.BOLD, color=theme["text_secondary"]),
+            ft.Row([
+                ft.Text("Total Descargado:", size=11, color=theme["text_secondary"]),
+                ft.Text(f"{total_down:.2f} MB", size=11, color=theme["accent_green"]),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Row([
+                ft.Text("Total Subido:", size=11, color=theme["text_secondary"]),
+                ft.Text(f"{total_up:.2f} MB", size=11, color=theme["accent_orange"]),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        ])
+        
+        net_details_container.controls = [
+            ft.Divider(color=theme["border_primary"]),
+            ft.Column(net_items, spacing=5)
+        ]
+        
+        # Actualizar estadísticas en tiempo real en el header de red
+        net_stats_row.controls = [
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.ARROW_DOWNWARD, color=theme["accent_green"], size=14),
+                    ft.Text(f"{down_speed:.1f} MB/s", size=11, color=theme["accent_green"]),
+                ], spacing=3),
+            ),
+            ft.Container(
+                content=ft.Row([
+                    ft.Icon(ft.Icons.ARROW_UPWARD, color=theme["accent_orange"], size=14),
+                    ft.Text(f"{up_speed:.1f} MB/s", size=11, color=theme["accent_orange"]),
+                ], spacing=3),
+            ),
+        ]
+        
+        # Actualizar todos los contenedores
         if cpu_details_container.page: cpu_details_container.update()
         if ram_details_container.page: ram_details_container.update()
         if disk_details_container.page: disk_details_container.update()
+        if gpu_details_container.page: gpu_details_container.update()
+        if net_details_container.page: net_details_container.update()
+        if net_stats_row.page: net_stats_row.update()
 
     # ============ CREAR CARDS ============
     def build_cpu_card():
@@ -311,7 +481,8 @@ def main(page: ft.Page):
     def build_gpu_card():
         return create_gpu_card(
             gpu_name_text, gpu_progress, gpu_percent_text,
-            gpu_temp_text, on_details_click
+            gpu_temp_text, on_details_click,
+            expanded_content=gpu_details_container
         )
 
     def build_disk_card():
@@ -322,7 +493,11 @@ def main(page: ft.Page):
         )
 
     def build_network_card():
-        return create_network_chart_card(network_chart_container, on_details_click)
+        return create_network_chart_card(
+            network_chart_container, on_details_click,
+            expanded_content=net_details_container,
+            stats_row=net_stats_row
+        )
 
     def on_details_click(e):
         """Handler para botones Ver Detalles"""
@@ -1110,6 +1285,8 @@ def main(page: ft.Page):
                         'disk_usage': disk['percent'],
                         'gpu_usage': gpu_info['usage'] if gpu_info else None,
                         'gpu_temp': gpu_info['temp'] if gpu_info else None,
+                        'net_upload': up_mb,
+                        'net_download': down_mb,
                     }
                     
                     # Verificar cada alerta habilitada
@@ -1117,17 +1294,39 @@ def main(page: ft.Page):
                         metric_value = current_metrics.get(alert.metric)
                         if metric_value is not None:
                             # Determinar condición para ToastManager
-                            condition = "greater" if alert.operator in [">", ">="] else "less" if alert.operator in ["<", "<="] else "equal"
+                            if alert.operator == ">":
+                                condition = "greater"
+                            elif alert.operator == ">=":
+                                condition = "greater_equal"
+                            elif alert.operator == "<":
+                                condition = "less"
+                            elif alert.operator == "<=":
+                                condition = "less_equal"
+                            else:
+                                condition = "equal"
                             
-                            # Mostrar alerta solo si cruza el umbral (no si se mantiene)
-                            # ToastManager internamente maneja rate limiting (1 por minuto por métrica)
-                            ToastManager.show_alert(
+                            # Verificar si los sonidos están habilitados
+                            sounds_enabled = db.get_config('enable_sounds') == 'true'
+                            
+                            # Callback para guardar en BD cuando se dispara
+                            def on_alert_triggered(alert_id):
+                                db.trigger_alert(alert_id)
+                            
+                            # SIEMPRE llamar a show_alert para que pueda:
+                            # 1. Detectar cuando ENTRA en alerta (dispara notificación)
+                            # 2. Detectar cuando SALE de alerta (limpia rate limit para próxima vez)
+                            # ToastManager internamente maneja si debe mostrar o no
+                            triggered = ToastManager.show_alert(
                                 alert_name=alert.name,
                                 metric=alert.metric,
                                 value=metric_value,
                                 threshold=alert.threshold,
-                                condition=condition
+                                condition=condition,
+                                play_sound=sounds_enabled and alert.notify_sound,
+                                on_triggered=on_alert_triggered,
+                                alert_id=alert.id
                             )
+                                
                 except Exception as ae:
                     print(f"Error evaluando alertas: {ae}")
 

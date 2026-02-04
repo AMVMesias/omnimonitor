@@ -9,6 +9,15 @@ from typing import Dict, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Importar SoundManager
+try:
+    from .sound_manager import SoundManager
+except ImportError:
+    try:
+        from src.ui.sound_manager import SoundManager
+    except ImportError:
+        SoundManager = None
+
 
 class ToastType(Enum):
     """Tipos de notificación"""
@@ -52,13 +61,20 @@ class ToastManager:
     _theme_getter: Optional[Callable] = None
     
     # Configuración
-    RATE_LIMIT_SECONDS = 60  # 1 minuto entre notificaciones del mismo tipo
-    MAX_VISIBLE_TOASTS = 3
+    RATE_LIMIT_SECONDS = 30  # 30 segundos entre notificaciones del mismo tipo (más frecuente)
+    MAX_VISIBLE_TOASTS = 5
+    
+    # Flag para primera ejecución
+    _first_run: bool = True
     
     @classmethod
     def initialize(cls, page: ft.Page, theme_getter: Callable = None):
         """Inicializar el gestor de toasts"""
         cls._page = page
+        # Reiniciar estados al inicializar para que las alertas disparen
+        cls._previous_states = {}
+        cls._last_notifications = {}
+        cls._first_run = True
         cls._theme_getter = theme_getter
         
         # Crear columna para toasts
@@ -113,24 +129,45 @@ class ToastManager:
     @classmethod
     def _check_threshold_crossed(cls, metric_key: str, current_value: float, threshold: float, condition: str) -> bool:
         """
-        Verificar si se cruzó el umbral (no si se mantiene)
-        Retorna True solo cuando CAMBIA de normal a alerta
+        Verificar si se cruzó el umbral o si es la primera vez que se evalúa
+        Retorna True cuando:
+        - Es la primera vez que se evalúa Y está en alerta
+        - CAMBIA de normal a alerta
+        
+        Además, limpia el rate limit cuando SALE del estado de alerta
+        para permitir que vuelva a sonar cuando regrese al estado de alerta.
         """
-        # Determinar si actualmente está en alerta
+        # Determinar si actualmente está en alerta según la condición
         if condition == "greater":
             is_alert = current_value > threshold
+        elif condition == "greater_equal":
+            is_alert = current_value >= threshold
         elif condition == "less":
             is_alert = current_value < threshold
-        else:
+        elif condition == "less_equal":
+            is_alert = current_value <= threshold
+        else:  # equal
             is_alert = current_value == threshold
         
+        # Si es la primera vez que evaluamos esta métrica
+        if metric_key not in cls._previous_states:
+            cls._previous_states[metric_key] = is_alert
+            # Disparar si ya está en estado de alerta al inicio
+            return is_alert
+        
         # Obtener estado anterior
-        was_alert = cls._previous_states.get(metric_key, False)
+        was_alert = cls._previous_states[metric_key]
         
         # Guardar nuevo estado
         cls._previous_states[metric_key] = is_alert
         
-        # Retornar True solo si CAMBIÓ a estado de alerta
+        # Si SALIÓ del estado de alerta (estaba en alerta y ya no)
+        # Limpiar el rate limit para que pueda volver a sonar cuando regrese
+        if was_alert and not is_alert:
+            if metric_key in cls._last_notifications:
+                del cls._last_notifications[metric_key]
+        
+        # Retornar True si CAMBIÓ de normal a alerta
         return is_alert and not was_alert
     
     @classmethod
@@ -272,53 +309,94 @@ class ToastManager:
         cls._auto_remove_toast(toast.id, duration_ms)
     
     @classmethod
-    def show_info(cls, message: str, **kwargs):
+    def show_info(cls, message: str, play_sound: bool = False, **kwargs):
         """Mostrar notificación informativa"""
         cls.show(message, ToastType.INFO, **kwargs)
+        if play_sound and SoundManager:
+            SoundManager.play_info()
     
     @classmethod
-    def show_success(cls, message: str, **kwargs):
+    def show_success(cls, message: str, play_sound: bool = False, **kwargs):
         """Mostrar notificación de éxito"""
         cls.show(message, ToastType.SUCCESS, **kwargs)
+        if play_sound and SoundManager:
+            SoundManager.play_success()
     
     @classmethod
-    def show_warning(cls, message: str, **kwargs):
+    def show_warning(cls, message: str, play_sound: bool = True, **kwargs):
         """Mostrar notificación de advertencia"""
         cls.show(message, ToastType.WARNING, **kwargs)
+        if play_sound and SoundManager:
+            SoundManager.play_warning()
     
     @classmethod
-    def show_error(cls, message: str, **kwargs):
+    def show_error(cls, message: str, play_sound: bool = True, **kwargs):
         """Mostrar notificación de error"""
         cls.show(message, ToastType.ERROR, **kwargs)
+        if play_sound and SoundManager:
+            SoundManager.play_error()
     
     @classmethod
     def show_alert(cls, alert_name: str, metric: str, value: float, threshold: float, 
-                   condition: str = "greater"):
+                   condition: str = "greater", play_sound: bool = True, 
+                   on_triggered: callable = None, alert_id: int = None):
         """
         Mostrar notificación de alerta del sistema
         Solo se muestra si cruza el umbral (no si se mantiene)
-        Rate limited: 1 por métrica por minuto
+        Rate limited: 30 segundos por métrica
         
         Args:
             alert_name: Nombre de la alerta
             metric: Nombre de la métrica (cpu, ram, etc.)
             value: Valor actual
             threshold: Umbral configurado
-            condition: "greater", "less", o "equal"
+            condition: "greater", "greater_equal", "less", "less_equal", "equal"
+            play_sound: Si reproducir sonido de alerta
+            on_triggered: Callback cuando se dispara la alerta (para guardar en BD)
+            alert_id: ID de la alerta para el callback
         """
-        metric_key = f"alert:{metric}"
+        metric_key = f"alert:{alert_name}:{metric}"  # Clave única por alerta+métrica
         
-        # Verificar si cruzó el umbral
+        # Verificar si cruzó el umbral (de normal a alerta)
         if not cls._check_threshold_crossed(metric_key, value, threshold, condition):
-            return
+            return False  # Retornar False para indicar que no se disparó
         
-        # Rate limiting
+        # Rate limiting (30 segundos entre alertas del mismo tipo)
         if not cls._can_show_notification(metric_key):
-            return
+            return False
         
-        # Formatear mensaje
-        condition_text = "supera" if condition == "greater" else "está por debajo de" if condition == "less" else "es igual a"
-        message = f"⚠️ {alert_name}: {metric.upper()} {condition_text} {threshold}% (actual: {value:.1f}%)"
+        # Determinar unidad según la métrica
+        if 'temp' in metric:
+            unit = "°C"
+        elif 'net_' in metric:
+            unit = " MB/s"
+        else:
+            unit = "%"
+        
+        # Formatear texto de condición
+        condition_texts = {
+            "greater": "supera",
+            "greater_equal": "supera o iguala",
+            "less": "está por debajo de",
+            "less_equal": "está por debajo o igual a",
+            "equal": "es igual a"
+        }
+        condition_text = condition_texts.get(condition, "supera")
+        
+        # Formatear nombre de métrica legible
+        metric_names = {
+            "cpu_usage": "CPU",
+            "cpu_temp": "Temp. CPU",
+            "ram_usage": "RAM",
+            "disk_usage": "Disco",
+            "gpu_usage": "GPU",
+            "gpu_temp": "Temp. GPU",
+            "net_download": "Descarga",
+            "net_upload": "Subida"
+        }
+        metric_display = metric_names.get(metric, metric.upper())
+        
+        message = f"⚠️ {alert_name}: {metric_display} {condition_text} {threshold}{unit} (actual: {value:.2f}{unit})"
         
         cls.show(
             message=message,
@@ -326,6 +404,19 @@ class ToastManager:
             icon=ft.Icons.NOTIFICATIONS_ACTIVE,
             duration_ms=8000,  # Alertas duran más
         )
+        
+        # Reproducir sonido de alerta
+        if play_sound and SoundManager:
+            SoundManager.play_alert()
+        
+        # Ejecutar callback si se proporcionó (para guardar en BD)
+        if on_triggered and alert_id is not None:
+            try:
+                on_triggered(alert_id)
+            except Exception as e:
+                print(f"Error en callback de alerta: {e}")
+        
+        return True  # Retornar True para indicar que se disparó
     
     @classmethod
     def clear_all(cls):

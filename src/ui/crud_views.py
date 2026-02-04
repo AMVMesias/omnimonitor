@@ -10,9 +10,14 @@ from datetime import datetime
 try:
     from .theme_manager import ThemeManager
     from .toast_manager import ToastManager
+    from .sound_manager import SoundManager
 except ImportError:
     from src.ui.theme_manager import ThemeManager
     from src.ui.toast_manager import ToastManager
+    try:
+        from src.ui.sound_manager import SoundManager
+    except ImportError:
+        SoundManager = None
 
 # Colores por defecto (fallback)
 DARK_BG = "#1A1B26"
@@ -113,8 +118,10 @@ def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None,
             ft.dropdown.Option("disk_usage", "Uso de Disco (%)"),
             ft.dropdown.Option("gpu_usage", "Uso de GPU (%)"),
             ft.dropdown.Option("gpu_temp", "Temperatura GPU (°C)"),
+            ft.dropdown.Option("net_download", "Descarga Red (MB/s)"),
+            ft.dropdown.Option("net_upload", "Subida Red (MB/s)"),
         ],
-        width=200,
+        width=250,
         bgcolor=colors["card"],
         border_color=colors["border"],
         color=colors["text"],
@@ -129,7 +136,7 @@ def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None,
             ft.dropdown.Option("<=", "Menor o igual (<=)"),
         ],
         value=">",
-        width=150,
+        width=200,
         bgcolor=colors["card"],
         border_color=colors["border"],
         color=colors["text"],
@@ -146,6 +153,159 @@ def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None,
     )
     
     status_text = ft.Text("", color=colors["green"], size=12)
+    
+    # Variable para almacenar el ID de la alerta que se está editando
+    editing_alert_id = {"value": None}  # Usar dict para poder modificarlo en closures
+    
+    # Campos del formulario de edición (diálogo)
+    edit_name_field = ft.TextField(
+        label="Nombre de la alerta",
+        bgcolor=colors["card"],
+        border_color=colors["border"],
+        color=colors["text"],
+        width=280,
+    )
+    
+    edit_metric_dropdown = ft.Dropdown(
+        label="Métrica",
+        options=[
+            ft.dropdown.Option("cpu_usage", "Uso de CPU (%)"),
+            ft.dropdown.Option("cpu_temp", "Temperatura CPU (°C)"),
+            ft.dropdown.Option("ram_usage", "Uso de RAM (%)"),
+            ft.dropdown.Option("disk_usage", "Uso de Disco (%)"),
+            ft.dropdown.Option("gpu_usage", "Uso de GPU (%)"),
+            ft.dropdown.Option("gpu_temp", "Temperatura GPU (°C)"),
+            ft.dropdown.Option("net_download", "Descarga Red (MB/s)"),
+            ft.dropdown.Option("net_upload", "Subida Red (MB/s)"),
+        ],
+        width=280,
+        bgcolor=colors["card"],
+        border_color=colors["border"],
+        color=colors["text"],
+    )
+    
+    edit_operator_dropdown = ft.Dropdown(
+        label="Condición",
+        options=[
+            ft.dropdown.Option(">", "Mayor que (>)"),
+            ft.dropdown.Option("<", "Menor que (<)"),
+            ft.dropdown.Option(">=", "Mayor o igual (>=)"),
+            ft.dropdown.Option("<=", "Menor o igual (<=)"),
+        ],
+        width=280,
+        bgcolor=colors["card"],
+        border_color=colors["border"],
+        color=colors["text"],
+    )
+    
+    edit_threshold_field = ft.TextField(
+        label="Umbral",
+        bgcolor=colors["card"],
+        border_color=colors["border"],
+        color=colors["text"],
+        width=280,
+        keyboard_type=ft.KeyboardType.NUMBER,
+    )
+    
+    edit_sound_switch = ft.Switch(
+        label="Sonido de alerta",
+        active_color=colors["green"],
+    )
+    
+    def close_edit_dialog(e):
+        edit_dialog.open = False
+        page.update()
+    
+    def save_edit_alert(e):
+        """Guardar cambios de la alerta editada"""
+        c = get_crud_theme()
+        alert_id = editing_alert_id["value"]
+        
+        if not alert_id:
+            return
+        
+        # Construir diccionario de actualizaciones solo con campos modificados
+        updates = {}
+        
+        if edit_name_field.value:
+            updates["name"] = edit_name_field.value
+        
+        if edit_metric_dropdown.value:
+            updates["metric"] = edit_metric_dropdown.value
+        
+        if edit_operator_dropdown.value:
+            updates["operator"] = edit_operator_dropdown.value
+        
+        if edit_threshold_field.value:
+            try:
+                updates["threshold"] = float(edit_threshold_field.value)
+            except ValueError:
+                ToastManager.show_error("El umbral debe ser un número válido")
+                return
+        
+        updates["notify_sound"] = edit_sound_switch.value
+        
+        # Aplicar actualizaciones
+        if updates:
+            alert_manager.update(alert_id, **updates)
+            ToastManager.show_success("Alerta actualizada correctamente")
+            edit_dialog.open = False
+            refresh_alerts_list()
+        else:
+            ToastManager.show_info("No hay cambios que guardar")
+        
+        page.update()
+    
+    # Diálogo de edición
+    edit_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Editar Alerta", weight=ft.FontWeight.BOLD),
+        content=ft.Container(
+            content=ft.Column([
+                edit_name_field,
+                ft.Container(height=10),
+                edit_metric_dropdown,
+                ft.Container(height=10),
+                edit_operator_dropdown,
+                ft.Container(height=10),
+                edit_threshold_field,
+                ft.Container(height=10),
+                edit_sound_switch,
+            ], tight=True),
+            width=300,
+            height=350,
+        ),
+        actions=[
+            ft.TextButton("Cancelar", on_click=close_edit_dialog),
+            ft.ElevatedButton(
+                "Guardar",
+                bgcolor=colors["green"],
+                color=colors["bg"],
+                on_click=save_edit_alert,
+            ),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    
+    def open_edit_dialog(alert_id: int):
+        """Abrir diálogo de edición con los datos de la alerta"""
+        alert = alert_manager.get(alert_id)
+        if not alert:
+            return
+        
+        editing_alert_id["value"] = alert_id
+        
+        # Rellenar campos con valores actuales
+        edit_name_field.value = alert.name
+        edit_metric_dropdown.value = alert.metric
+        edit_operator_dropdown.value = alert.operator
+        edit_threshold_field.value = str(alert.threshold)
+        edit_sound_switch.value = alert.notify_sound
+        
+        # Mostrar diálogo
+        page.overlay.append(edit_dialog)
+        edit_dialog.open = True
+        page.update()
     
     def refresh_alerts_list():
         """Actualizar lista de alertas"""
@@ -193,6 +353,12 @@ def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None,
                             value=alert.enabled,
                             active_color=c["green"],
                             on_change=lambda e, aid=alert.id: toggle_alert(aid),
+                        ),
+                        ft.IconButton(
+                            ft.Icons.EDIT_OUTLINED,
+                            icon_color=c["blue"],
+                            tooltip="Editar",
+                            on_click=lambda e, aid=alert.id: open_edit_dialog(aid),
                         ),
                         ft.IconButton(
                             ft.Icons.DELETE_OUTLINE,
@@ -391,7 +557,7 @@ def build_processes_view(process_manager, page: ft.Page,
             ft.dropdown.Option("pid", "PID"),
             ft.dropdown.Option("name", "Nombre"),
         ],
-        width=150,
+        width=180,
         bgcolor=colors["card"],
         border_color=colors["border"],
         color=colors["text"],
@@ -529,6 +695,60 @@ def build_processes_view(process_manager, page: ft.Page,
     search_field.on_change = on_search_change
     sort_dropdown.on_change = on_sort_change
     
+    def export_to_csv(e):
+        """Exportar procesos a archivo CSV"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        c = get_crud_theme()
+        try:
+            # Obtener todos los procesos actuales
+            process_manager.set_filter(search_field.value or "")
+            process_manager.set_sort(sort_dropdown.value, reverse=(sort_dropdown.value != "name"))
+            processes, stats = process_manager.get_all_with_stats(limit=100)
+            
+            # Crear nombre de archivo con timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Determinar directorio de descarga
+            home = os.path.expanduser("~")
+            downloads_dir = os.path.join(home, "Downloads")
+            if not os.path.exists(downloads_dir):
+                downloads_dir = os.path.join(home, "Descargas")
+            if not os.path.exists(downloads_dir):
+                downloads_dir = home
+            
+            filepath = os.path.join(downloads_dir, f"procesos_{timestamp}.csv")
+            
+            # Escribir CSV
+            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                # Header
+                writer.writerow(['PID', 'Nombre', 'CPU %', 'RAM (MB)', 'Estado', 'Usuario', 'Threads'])
+                # Data
+                for proc in processes:
+                    writer.writerow([
+                        proc.pid,
+                        proc.name,
+                        f"{proc.cpu_percent:.1f}",
+                        f"{proc.memory_mb:.0f}",
+                        proc.status,
+                        getattr(proc, 'username', 'N/A'),
+                        getattr(proc, 'threads', 'N/A'),
+                    ])
+            
+            status_text.value = f"✅ Exportado: {filepath}"
+            status_text.color = c["green"]
+            ToastManager.show_success(f"Procesos exportados a CSV correctamente")
+            page.update()
+            
+        except Exception as ex:
+            status_text.value = f"❌ Error al exportar: {str(ex)}"
+            status_text.color = c["red"]
+            ToastManager.show_error(f"Error al exportar: {str(ex)}")
+            page.update()
+    
     # Construir UI inmediatamente (sin esperar a que carguen los procesos)
     view = ft.Container(
         content=ft.Column([
@@ -539,6 +759,14 @@ def build_processes_view(process_manager, page: ft.Page,
                     search_field,
                     sort_dropdown,
                     ft.Container(expand=True),
+                    ft.ElevatedButton(
+                        "Exportar CSV",
+                        icon=ft.Icons.DOWNLOAD,
+                        bgcolor=colors["green"],
+                        color=colors["bg"],
+                        on_click=export_to_csv,
+                        height=40,
+                    ),
                     ft.IconButton(
                         ft.Icons.REFRESH,
                         icon_color=colors["blue"],
@@ -792,6 +1020,18 @@ def build_config_view(db, page: ft.Page,
         active_color=colors["green"],
     )
     
+    def on_sounds_switch_change(e):
+        """Reproducir sonido de prueba cuando se activa el switch"""
+        if sounds_switch.value and SoundManager:
+            # Reproducir sonido de prueba para demostrar que funciona
+            SoundManager.play_alert()
+            ToastManager.show_info("🔊 Sonido de alerta activado")
+        elif not sounds_switch.value:
+            ToastManager.show_info("🔇 Sonidos desactivados")
+        page.update()
+    
+    sounds_switch.on_change = on_sounds_switch_change
+    
     def save_config(e):
         """Guardar configuración"""
         c = get_crud_theme()
@@ -800,6 +1040,10 @@ def build_config_view(db, page: ft.Page,
         db.set_config('history_retention_days', retention_dropdown.value)
         db.set_config('enable_notifications', 'true' if notifications_switch.value else 'false')
         db.set_config('enable_sounds', 'true' if sounds_switch.value else 'false')
+        
+        # Actualizar SoundManager
+        if SoundManager:
+            SoundManager.set_enabled(sounds_switch.value)
         
         # Aplicar tema inmediatamente si cambió
         if theme_dropdown.value == 'light' and on_theme_light:
@@ -826,6 +1070,10 @@ def build_config_view(db, page: ft.Page,
         retention_dropdown.value = config.get('history_retention_days', '7')
         notifications_switch.value = config.get('enable_notifications', 'true') == 'true'
         sounds_switch.value = config.get('enable_sounds', 'true') == 'true'
+        
+        # Restaurar SoundManager a estado por defecto (habilitado)
+        if SoundManager:
+            SoundManager.set_enabled(True)
         
         # Aplicar tema por defecto (dark)
         if on_theme_dark:

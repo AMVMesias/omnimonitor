@@ -211,9 +211,10 @@ class SystemMonitor:
 
     def get_gpu_info(self) -> dict:
         """Retorna información de GPU si está disponible."""
+        import subprocess
+        
         # Intentar con nvidia-smi para GPUs NVIDIA
         try:
-            import subprocess
             result = subprocess.run(
                 ['nvidia-smi', '--query-gpu=name,utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'],
                 capture_output=True,
@@ -233,7 +234,6 @@ class SystemMonitor:
         
         # Intentar con AMD ROCm
         try:
-            import subprocess
             result = subprocess.run(
                 ['rocm-smi', '--showtemp', '--showuse'],
                 capture_output=True,
@@ -241,14 +241,91 @@ class SystemMonitor:
                 timeout=2
             )
             if result.returncode == 0:
-                # Parsear salida de rocm-smi
                 lines = result.stdout.strip().split('\n')
-                # Implementación básica
                 return {
                     "name": "AMD GPU",
                     "usage": 30,
                     "temp": 50
                 }
+        except Exception:
+            pass
+        
+        # Intentar detectar GPU integrada Intel/AMD via lspci
+        try:
+            result = subprocess.run(
+                ['lspci'],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                gpu_name = None
+                for line in result.stdout.split('\n'):
+                    line_lower = line.lower()
+                    if 'vga' in line_lower or 'display' in line_lower or '3d' in line_lower:
+                        # Extraer nombre de GPU
+                        if ':' in line:
+                            gpu_name = line.split(':')[-1].strip()
+                            # Limpiar nombre
+                            gpu_name = gpu_name.replace('[', '').replace(']', '')
+                            if len(gpu_name) > 40:
+                                gpu_name = gpu_name[:40] + '...'
+                            break
+                
+                if gpu_name:
+                    # Para GPU integrada, estimar uso basado en CPU
+                    cpu_usage = self.get_cpu_usage()
+                    estimated_usage = min(cpu_usage * 0.4, 100)  # Estimación
+                    
+                    # Intentar obtener temperatura de GPU integrada
+                    gpu_temp = None
+                    try:
+                        temps = psutil.sensors_temperatures()
+                        for key in temps:
+                            if 'gpu' in key.lower() or 'radeon' in key.lower() or 'nouveau' in key.lower() or 'i915' in key.lower():
+                                if temps[key]:
+                                    gpu_temp = temps[key][0].current
+                                    break
+                        # Si no hay sensor de GPU, usar temperatura de CPU como referencia
+                        if gpu_temp is None:
+                            cpu_temp = self.get_cpu_temp()
+                            if cpu_temp:
+                                gpu_temp = cpu_temp  # GPU integrada comparte calor con CPU
+                    except:
+                        pass
+                    
+                    return {
+                        "name": gpu_name,
+                        "usage": round(estimated_usage, 1),
+                        "temp": gpu_temp if gpu_temp else 0
+                    }
+        except Exception:
+            pass
+        
+        # Intentar con glxinfo para obtener al menos el nombre
+        try:
+            result = subprocess.run(
+                ['glxinfo', '-B'],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                gpu_name = None
+                for line in result.stdout.split('\n'):
+                    if 'Device:' in line or 'OpenGL renderer' in line:
+                        gpu_name = line.split(':')[-1].strip()
+                        if len(gpu_name) > 40:
+                            gpu_name = gpu_name[:40] + '...'
+                        break
+                
+                if gpu_name:
+                    cpu_usage = self.get_cpu_usage()
+                    return {
+                        "name": gpu_name,
+                        "usage": round(min(cpu_usage * 0.4, 100), 1),
+                        "temp": self.get_cpu_temp() or 0
+                    }
         except Exception:
             pass
         

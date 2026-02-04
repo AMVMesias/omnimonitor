@@ -334,9 +334,53 @@ def create_ram_card(used_text: ft.Text, available_text: ft.Text,
 
 def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
                     percent_text: ft.Text, temp_text: ft.Text,
-                    on_details_click) -> ft.Container:
-    """Crea la tarjeta de GPU/Temperatura"""
+                    on_details_click, expanded_content: ft.Control = None) -> ft.Container:
+    """Crea la tarjeta de GPU/Temperatura con detalles expandibles"""
     colors = get_theme_colors()
+    
+    # Contenido por defecto si no hay expanded_content
+    default_details = ft.Column([
+        ft.Divider(color=colors["border"]),
+        ft.Container(height=5),
+        ft.Row([
+            ft.Text("Tipo:", size=12, color=colors["text_secondary"]),
+            ft.Text("GPU", size=12, color=colors["text"]),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        ft.Row([
+            ft.Text("Estado:", size=12, color=colors["text_secondary"]),
+            ft.Text("Activa", size=12, color=colors["green"]),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        ft.Row([
+            ft.Text("Memoria:", size=12, color=colors["text_secondary"]),
+            ft.Text("Compartida con Sistema", size=12, color=colors["text"]),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+    ], spacing=5)
+    
+    details_content = expanded_content if expanded_content else default_details
+    
+    details_container = ft.Container(
+        content=details_content,
+        visible=False,
+        animate_opacity=300,
+    )
+
+    def toggle_details(e):
+        details_container.visible = not details_container.visible
+        try:
+            row = e.control.content
+            text = row.controls[0]
+            icon = row.controls[1]
+            
+            text.value = "Ocultar Detalles" if details_container.visible else "Ver Detalles"
+            icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
+            
+            e.control.update()
+        except Exception:
+            pass
+        
+        details_container.update()
+        if e.page: e.page.update()
+
     return ft.Container(
         content=ft.Column([
             ft.Row([
@@ -363,16 +407,19 @@ def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
                 ft.Icon(ft.Icons.WARNING_AMBER, color=colors["yellow"], size=16),
                 temp_text,
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=5),
+            ft.Container(height=10),
+            details_container,
             ft.Container(expand=True),
             ft.Row([
                 ft.Container(expand=True),
-                create_detail_button(on_details_click),
+                create_detail_button(toggle_details),
             ]),
         ]),
         bgcolor=colors["card"],
         border_radius=15,
         padding=20,
         border=ft.border.all(1, colors["border"]),
+        animate_size=300,
     )
 
 
@@ -446,23 +493,61 @@ def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
 
 
 def create_network_chart_card(chart_container: ft.Container, 
-                               on_details_click) -> ft.Container:
-    """Crea la tarjeta grande del historial de red"""
+                               on_details_click, 
+                               expanded_content: ft.Control = None,
+                               stats_row: ft.Control = None) -> ft.Container:
+    """Crea la tarjeta grande del historial de red con detalles expandibles"""
     colors = get_theme_colors()
+    
+    details_container = ft.Container(
+        content=expanded_content,
+        visible=False,
+        animate_opacity=300,
+    ) if expanded_content else None
+
+    def toggle_details(e):
+        if details_container:
+            details_container.visible = not details_container.visible
+            try:
+                row = e.control.content
+                text = row.controls[0]
+                icon = row.controls[1]
+                
+                text.value = "Ocultar Detalles" if details_container.visible else "Ver Detalles"
+                icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
+                
+                e.control.update()
+            except Exception:
+                pass
+            
+            details_container.update()
+            if e.page: e.page.update()
+            
+    action = toggle_details if expanded_content else on_details_click
+
     return ft.Container(
         content=ft.Column([
             ft.Row([
                 ft.Icon(ft.Icons.WIFI, color=colors["blue"], size=20),
                 ft.Text("Historial de Red (Última Hora)", size=14, 
                        weight=ft.FontWeight.W_500, color=colors["text"]),
+                ft.Container(expand=True),
+                stats_row if stats_row else ft.Container(),
             ], spacing=10),
             ft.Container(height=10),
             chart_container,
+            ft.Container(height=10),
+            details_container if details_container else ft.Container(),
+            ft.Row([
+                ft.Container(expand=True),
+                create_detail_button(action),
+            ]),
         ]),
         bgcolor=colors["card"],
         border_radius=15,
         padding=20,
         border=ft.border.all(1, colors["border"]),
+        animate_size=300,
     )
 
 

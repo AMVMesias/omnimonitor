@@ -1,0 +1,14 @@
+# Database
+omnimonitor.db
+
+# Virtual Environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# OS
+.DS_Store
+Thumbs.db

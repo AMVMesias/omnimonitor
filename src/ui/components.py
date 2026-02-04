@@ -1,6 +1,6 @@
 import flet as ft
 
-# ============ COLORES DEL TEMA OSCURO ============
+# ============ COLORES DEL TEMA OSCURO (DEFAULT/FALLBACK) ============
 DARK_BG = "#0D1117"           # Fondo principal oscuro
 CARD_BG = "#161B22"           # Fondo de tarjetas
 SIDEBAR_BG = "#0D1117"        # Fondo del sidebar
@@ -18,6 +18,43 @@ PURPLE_PRIMARY = "#A78BFA"    # Púrpura (acentos)
 TEXT_WHITE = "#FFFFFF"
 TEXT_GRAY = "#9CA3AF"
 TEXT_DARK_GRAY = "#6B7280"
+
+
+def get_theme_colors():
+    """Obtener colores del tema actual dinámicamente"""
+    try:
+        from .theme_manager import ThemeManager
+        theme = ThemeManager.get_theme()
+        return {
+            "bg": theme["bg_primary"],
+            "card": theme["bg_card"],
+            "sidebar": theme["bg_sidebar"],
+            "text": theme["text_primary"],
+            "text_secondary": theme["text_secondary"],
+            "text_muted": theme["text_muted"],
+            "border": theme["border_primary"],
+            "green": theme["accent_green"],
+            "blue": theme["accent_blue"],
+            "orange": theme["accent_orange"],
+            "red": theme["accent_red"],
+            "yellow": theme["accent_yellow"],
+        }
+    except:
+        # Fallback a colores oscuros por defecto
+        return {
+            "bg": DARK_BG,
+            "card": CARD_BG,
+            "sidebar": SIDEBAR_BG,
+            "text": TEXT_WHITE,
+            "text_secondary": TEXT_GRAY,
+            "text_muted": TEXT_DARK_GRAY,
+            "border": "#1E2130",
+            "green": GREEN_PRIMARY,
+            "blue": BLUE_PRIMARY,
+            "orange": ORANGE_PRIMARY,
+            "red": RED_PRIMARY,
+            "yellow": YELLOW_PRIMARY,
+        }
 
 
 def create_circular_progress(value: float, color: str, size: int = 130) -> ft.Container:
@@ -93,30 +130,41 @@ def create_sidebar(on_change_callback) -> ft.Container:
     )
 
 
-def create_header(title: str) -> ft.Container:
-    """Crea el encabezado con título e iconos de acción"""
+def create_header(title: str, on_theme_toggle=None, on_dark_mode=None, on_notifications=None) -> ft.Container:
+    """Crea el encabezado con título e iconos de acción
+    
+    Args:
+        title: Título del encabezado
+        on_theme_toggle: Callback para cambiar tema (modo claro/oscuro)
+        on_dark_mode: Callback para activar modo oscuro
+        on_notifications: Callback para ver/gestionar notificaciones
+    """
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Row([
-            ft.Text(title, size=26, weight=ft.FontWeight.BOLD, color=TEXT_WHITE),
+            ft.Text(title, size=26, weight=ft.FontWeight.BOLD, color=colors["text"]),
             ft.Container(expand=True),
             ft.Row([
                 ft.IconButton(
                     icon=ft.Icons.LIGHT_MODE_OUTLINED,
-                    icon_color=TEXT_GRAY,
+                    icon_color=colors["text_secondary"],
                     icon_size=20,
-                    tooltip="Cambiar tema",
+                    tooltip="Modo claro",
+                    on_click=on_theme_toggle,
                 ),
                 ft.IconButton(
                     icon=ft.Icons.DARK_MODE_OUTLINED,
-                    icon_color=TEXT_GRAY,
+                    icon_color=colors["text_secondary"],
                     icon_size=20,
                     tooltip="Modo oscuro",
+                    on_click=on_dark_mode,
                 ),
                 ft.IconButton(
                     icon=ft.Icons.NOTIFICATIONS_OUTLINED,
-                    icon_color=TEXT_GRAY,
+                    icon_color=colors["text_secondary"],
                     icon_size=20,
-                    tooltip="Notificaciones",
+                    tooltip="Ver alertas",
+                    on_click=on_notifications,
                 ),
             ], spacing=0),
         ]),
@@ -125,10 +173,11 @@ def create_header(title: str) -> ft.Container:
 
 def create_detail_button(on_click) -> ft.Container:
     """Crea un botón 'Ver Detalles' estilizado"""
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Row([
-            ft.Text("Ver Detalles", size=12, color=TEXT_GRAY),
-            ft.Icon(ft.Icons.CHEVRON_RIGHT, color=TEXT_GRAY, size=16),
+            ft.Text("Ver Detalles", size=12, color=colors["text_secondary"]),
+            ft.Icon(ft.Icons.CHEVRON_RIGHT, color=colors["text_secondary"], size=16),
         ], spacing=2),
         on_click=on_click,
         ink=True,
@@ -141,10 +190,11 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
                     percent_text: ft.Text, temp_text: ft.Text, 
                     speed_text: ft.Text, on_details_click) -> ft.Container:
     """Crea la tarjeta de CPU con diseño circular"""
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.MEMORY, color=GREEN_PRIMARY, size=20),
+                ft.Icon(ft.Icons.MEMORY, color=colors["green"], size=20),
                 cpu_name,
             ], spacing=10),
             ft.Container(height=15),
@@ -154,7 +204,7 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
                     ft.Container(
                         content=ft.Column([
                             percent_text,
-                            ft.Text("Usage", size=12, color=TEXT_GRAY),
+                            ft.Text("Usage", size=12, color=colors["text_secondary"]),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
                         alignment=ft.alignment.Alignment(0, 0),
                         width=130,
@@ -166,7 +216,7 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
             ft.Row([
                 temp_text,
                 ft.Container(width=10),
-                ft.Text("|", color=TEXT_DARK_GRAY),
+                ft.Text("|", color=colors["text_muted"]),
                 ft.Container(width=10),
                 speed_text,
             ], alignment=ft.MainAxisAlignment.CENTER),
@@ -176,10 +226,10 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
                 create_detail_button(on_details_click),
             ]),
         ]),
-        bgcolor=CARD_BG,
+        bgcolor=colors["card"],
         border_radius=15,
         padding=20,
-        border=ft.border.all(1, "#1E2130"),
+        border=ft.border.all(1, colors["border"]),
     )
 
 
@@ -187,11 +237,12 @@ def create_ram_card(used_text: ft.Text, available_text: ft.Text,
                     progress_bar: ft.ProgressBar, history_chart: ft.Container,
                     on_details_click) -> ft.Container:
     """Crea la tarjeta de RAM con barra de progreso y mini gráfico"""
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.MEMORY_OUTLINED, color=GREEN_PRIMARY, size=20),
-                ft.Text("RAM: DDR4", size=14, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                ft.Icon(ft.Icons.MEMORY_OUTLINED, color=colors["green"], size=20),
+                ft.Text("RAM: DDR4", size=14, weight=ft.FontWeight.W_500, color=colors["text"]),
                 ft.Container(expand=True),
                 used_text,
             ], spacing=10),
@@ -209,10 +260,10 @@ def create_ram_card(used_text: ft.Text, available_text: ft.Text,
                 create_detail_button(on_details_click),
             ]),
         ]),
-        bgcolor=CARD_BG,
+        bgcolor=colors["card"],
         border_radius=15,
         padding=20,
-        border=ft.border.all(1, "#1E2130"),
+        border=ft.border.all(1, colors["border"]),
     )
 
 
@@ -220,10 +271,11 @@ def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
                     percent_text: ft.Text, temp_text: ft.Text,
                     on_details_click) -> ft.Container:
     """Crea la tarjeta de GPU/Temperatura"""
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.VIDEOGAME_ASSET, color=ORANGE_PRIMARY, size=20),
+                ft.Icon(ft.Icons.VIDEOGAME_ASSET, color=colors["orange"], size=20),
                 gpu_name,
             ], spacing=10),
             ft.Container(height=10),
@@ -233,7 +285,7 @@ def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
                     ft.Container(
                         content=ft.Column([
                             percent_text,
-                            ft.Text("Usage", size=11, color=TEXT_GRAY),
+                            ft.Text("Usage", size=11, color=colors["text_secondary"]),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
                         alignment=ft.alignment.Alignment(0, 0),
                         width=100,
@@ -243,7 +295,7 @@ def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
             ], alignment=ft.MainAxisAlignment.CENTER),
             ft.Container(height=10),
             ft.Row([
-                ft.Icon(ft.Icons.WARNING_AMBER, color=YELLOW_PRIMARY, size=16),
+                ft.Icon(ft.Icons.WARNING_AMBER, color=colors["yellow"], size=16),
                 temp_text,
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=5),
             ft.Container(expand=True),
@@ -252,10 +304,10 @@ def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
                 create_detail_button(on_details_click),
             ]),
         ]),
-        bgcolor=CARD_BG,
+        bgcolor=colors["card"],
         border_radius=15,
         padding=20,
-        border=ft.border.all(1, "#1E2130"),
+        border=ft.border.all(1, colors["border"]),
     )
 
 
@@ -263,10 +315,11 @@ def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
                      speed_text: ft.Text, progress_bar: ft.ProgressBar,
                      on_details_click) -> ft.Container:
     """Crea la tarjeta de disco con barra de progreso"""
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.STORAGE, color=BLUE_PRIMARY, size=20),
+                ft.Icon(ft.Icons.STORAGE, color=colors["blue"], size=20),
                 disk_name,
             ], spacing=10),
             ft.Container(height=15),
@@ -288,30 +341,31 @@ def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
                 create_detail_button(on_details_click),
             ]),
         ]),
-        bgcolor=CARD_BG,
+        bgcolor=colors["card"],
         border_radius=15,
         padding=20,
-        border=ft.border.all(1, "#1E2130"),
+        border=ft.border.all(1, colors["border"]),
     )
 
 
 def create_network_chart_card(chart_container: ft.Container, 
                                on_details_click) -> ft.Container:
     """Crea la tarjeta grande del historial de red"""
+    colors = get_theme_colors()
     return ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.WIFI, color=BLUE_PRIMARY, size=20),
+                ft.Icon(ft.Icons.WIFI, color=colors["blue"], size=20),
                 ft.Text("Historial de Red (Última Hora)", size=14, 
-                       weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                       weight=ft.FontWeight.W_500, color=colors["text"]),
             ], spacing=10),
             ft.Container(height=10),
             chart_container,
         ]),
-        bgcolor=CARD_BG,
+        bgcolor=colors["card"],
         border_radius=15,
         padding=20,
-        border=ft.border.all(1, "#1E2130"),
+        border=ft.border.all(1, colors["border"]),
     )
 
 

@@ -73,14 +73,7 @@ class ProcessManager:
         """Obtener lista de procesos"""
         processes = []
         
-        # Primero hacer un pase para actualizar CPU percent
-        for proc in psutil.process_iter():
-            try:
-                proc.cpu_percent(interval=None)
-            except:
-                pass
-        
-        # Luego obtener la info
+        # Obtener procesos directamente (sin pre-iteración innecesaria)
         for proc in psutil.process_iter():
             p = Process.from_psutil(proc)
             if p:

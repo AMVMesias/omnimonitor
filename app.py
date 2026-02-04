@@ -24,6 +24,9 @@ from src.ui.components import (
     create_gpu_card, create_disk_card, create_network_chart_card, create_header
 )
 
+# Importar Theme Manager
+from src.ui.theme_manager import ThemeManager, apply_theme_to_page, DARK_THEME, LIGHT_THEME
+
 # Importar CRUD
 from src.database.db import get_db
 from src.crud.alerts import AlertManager
@@ -133,6 +136,16 @@ def main(page: ft.Page):
     process_manager = ProcessManager()
     history_manager = HistoryManager()
     
+    # ============ CARGAR TEMA GUARDADO ============
+    saved_theme = db.get_config('theme')
+    if saved_theme == 'light':
+        ThemeManager.set_light()
+    else:
+        ThemeManager.set_dark()
+    
+    # Aplicar tema al iniciar
+    apply_theme_to_page(page, ThemeManager.get_theme())
+    
     chart_mgr = ChartManager(max_points=60)
     update_interval = 1.0
     current_view = "resumen"
@@ -206,11 +219,138 @@ def main(page: ft.Page):
         """Handler para botones Ver Detalles"""
         pass
 
+    # ============ HEADER BUTTON HANDLERS ============
+    def on_theme_light(e):
+        """Cambiar a tema claro"""
+        ThemeManager.set_light()
+        apply_theme_to_page(page, LIGHT_THEME)
+        
+        # Guardar preferencia en base de datos
+        db.set_config('theme', 'light')
+        
+        # Reconstruir la vista actual con nuevos colores
+        rebuild_current_view()
+        
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text("☀️ Tema claro activado", color="#1E293B"),
+            bgcolor="#E2E8F0",
+        )
+        page.snack_bar.open = True
+        page.update()
+    
+    def on_theme_dark(e):
+        """Cambiar a tema oscuro"""
+        ThemeManager.set_dark()
+        apply_theme_to_page(page, DARK_THEME)
+        
+        # Guardar preferencia en base de datos
+        db.set_config('theme', 'dark')
+        
+        # Reconstruir la vista actual con nuevos colores
+        rebuild_current_view()
+        
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text("🌙 Tema oscuro activado"),
+            bgcolor=BLUE_PRIMARY,
+        )
+        page.snack_bar.open = True
+        page.update()
+    
+    def on_show_notifications(e):
+        """Ir a la vista de alertas/notificaciones"""
+        nonlocal current_view
+        current_view = "alertas"
+        sidebar.selected_index = 5  # Índice de Alertas en el sidebar
+        main_content.content = build_alerts_view(alert_manager, page)
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text(f"🔔 Tienes {alert_manager.count()} alertas configuradas"),
+            bgcolor=YELLOW_PRIMARY,
+        )
+        page.snack_bar.open = True
+        page.update()
+    
+    def rebuild_current_view():
+        """Reconstruir la vista actual con los colores del tema"""
+        nonlocal current_view
+        theme = ThemeManager.get_theme()
+        
+        # Actualizar colores de fondo de los contenedores principales
+        main_content.bgcolor = theme["bg_primary"]
+        
+        # Actualizar sidebar
+        sidebar.bgcolor = theme["bg_sidebar"]
+        
+        # Actualizar status bar
+        status_bar.bgcolor = theme["bg_sidebar"]
+        
+        # Actualizar colores de textos dinámicos
+        cpu_percent_text.color = theme["text_primary"]
+        cpu_name_text.color = theme["text_primary"]
+        cpu_speed_text.color = theme["text_secondary"]
+        
+        gpu_percent_text.color = theme["text_primary"]
+        gpu_name_text.color = theme["text_primary"]
+        
+        disk_name_text.color = theme["text_primary"]
+        disk_used_text.color = theme["text_secondary"]
+        disk_speed_text.color = theme["text_secondary"]
+        
+        ram_used_text.color = theme["text_secondary"]
+        ram_available_text.color = theme["text_secondary"]
+        
+        # Actualizar colores de barras de progreso
+        ram_bar.bgcolor = theme["border_secondary"]
+        disk_bar.bgcolor = theme["border_secondary"]
+        
+        if current_view == "resumen":
+            main_content.content = build_resumen_view()
+        elif current_view == "cpu":
+            main_content.content = build_cpu_detail_view()
+        elif current_view == "ram":
+            main_content.content = build_ram_detail_view()
+        elif current_view == "disco":
+            main_content.content = build_disk_detail_view()
+        elif current_view == "red":
+            main_content.content = build_network_detail_view()
+        elif current_view == "alertas":
+            main_content.content = build_alerts_view(
+                alert_manager, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
+        elif current_view == "procesos":
+            main_content.content = build_processes_view(
+                process_manager, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
+        elif current_view == "historial":
+            main_content.content = build_history_view(
+                history_manager, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
+        elif current_view == "ajustes":
+            main_content.content = build_config_view(
+                db, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
+
     # ============ VISTAS ============
     def build_resumen_view():
         return ft.Container(
             content=ft.Column([
-                create_header("Estado del Sistema - Tiempo Real"),
+                create_header(
+                    "Estado del Sistema - Tiempo Real",
+                    on_theme_toggle=on_theme_light,
+                    on_dark_mode=on_theme_dark,
+                    on_notifications=on_show_notifications
+                ),
                 ft.Container(height=15),
                 ft.Row([
                     ft.Container(content=build_cpu_card(), expand=1),
@@ -228,71 +368,75 @@ def main(page: ft.Page):
             ], scroll=ft.ScrollMode.AUTO, spacing=0),
             padding=25,
             expand=True,
-            bgcolor=DARK_BG,
+            bgcolor=ThemeManager.get_theme()["bg_primary"],
         )
 
     def build_cpu_detail_view():
+        theme = ThemeManager.get_theme()
         return ft.Container(
             content=ft.Column([
-                create_header("CPU - Detalles"),
+                create_header("CPU - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
                 ft.Container(height=20),
                 build_cpu_card(),
                 ft.Container(height=20),
                 ft.Container(
                     content=ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.INFO_OUTLINE, color=BLUE_PRIMARY, size=20),
-                            ft.Text("Información del Procesador", size=16, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                            ft.Icon(ft.Icons.INFO_OUTLINE, color=theme["accent_blue"], size=20),
+                            ft.Text("Información del Procesador", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
                         ]),
                         ft.Container(height=15),
-                        ft.Text(f"Núcleos físicos: {monitor.get_cpu_count()[0]}", color=TEXT_GRAY),
-                        ft.Text(f"Núcleos lógicos: {monitor.get_cpu_count()[1]}", color=TEXT_GRAY),
-                        ft.Text(f"Arquitectura: {monitor.get_system_info()['architecture']}", color=TEXT_GRAY),
+                        ft.Text(f"Núcleos físicos: {monitor.get_cpu_count()[0]}", color=theme["text_secondary"]),
+                        ft.Text(f"Núcleos lógicos: {monitor.get_cpu_count()[1]}", color=theme["text_secondary"]),
+                        ft.Text(f"Arquitectura: {monitor.get_system_info()['architecture']}", color=theme["text_secondary"]),
                     ]),
-                    bgcolor=CARD_BG,
+                    bgcolor=theme["bg_card"],
                     border_radius=15,
                     padding=20,
                 )
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
-            bgcolor=DARK_BG,
+            bgcolor=theme["bg_primary"],
         )
 
     def build_ram_detail_view():
+        theme = ThemeManager.get_theme()
         return ft.Container(
             content=ft.Column([
-                create_header("RAM - Detalles"),
+                create_header("RAM - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
                 ft.Container(height=20),
                 build_ram_card(),
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
-            bgcolor=DARK_BG,
+            bgcolor=theme["bg_primary"],
         )
 
     def build_disk_detail_view():
+        theme = ThemeManager.get_theme()
         return ft.Container(
             content=ft.Column([
-                create_header("Disco - Detalles"),
+                create_header("Disco - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
                 ft.Container(height=20),
                 build_disk_card(),
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
-            bgcolor=DARK_BG,
+            bgcolor=theme["bg_primary"],
         )
 
     def build_network_detail_view():
+        theme = ThemeManager.get_theme()
         return ft.Container(
             content=ft.Column([
-                create_header("Red - Detalles"),
+                create_header("Red - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
                 ft.Container(height=20),
                 build_network_card(),
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
-            bgcolor=DARK_BG,
+            bgcolor=theme["bg_primary"],
         )
 
     # ============ CONTENEDOR PRINCIPAL ============
@@ -320,13 +464,33 @@ def main(page: ft.Page):
         elif current_view == "red":
             main_content.content = build_network_detail_view()
         elif current_view == "alertas":
-            main_content.content = build_alerts_view(alert_manager, page)
+            main_content.content = build_alerts_view(
+                alert_manager, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
         elif current_view == "procesos":
-            main_content.content = build_processes_view(process_manager, page)
+            main_content.content = build_processes_view(
+                process_manager, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
         elif current_view == "historial":
-            main_content.content = build_history_view(history_manager, page)
+            main_content.content = build_history_view(
+                history_manager, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
         elif current_view == "ajustes":
-            main_content.content = build_config_view(db, page)
+            main_content.content = build_config_view(
+                db, page,
+                on_theme_light=on_theme_light,
+                on_theme_dark=on_theme_dark,
+                on_notifications=on_show_notifications
+            )
         
         page.update()
 

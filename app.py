@@ -36,6 +36,7 @@ from src.ui.crud_views import (
     build_alerts_view, build_processes_view,
     build_history_view, build_config_view
 )
+from src.ui.toast_manager import ToastManager, ToastType
 
 # Detectar modo de ejecución
 IS_WEB = "--web" in sys.argv or "-w" in sys.argv
@@ -146,6 +147,24 @@ def main(page: ft.Page):
     # Aplicar tema al iniciar
     apply_theme_to_page(page, ThemeManager.get_theme())
     
+    # ============ INICIALIZAR SISTEMA DE NOTIFICACIONES ============
+    def get_toast_theme():
+        """Obtener colores del tema actual para toasts"""
+        theme = ThemeManager.get_theme()
+        return {
+            "bg": theme["bg_primary"],
+            "card": theme["bg_card"],
+            "text": theme["text_primary"],
+            "text_secondary": theme["text_secondary"],
+            "green": theme["accent_green"],
+            "blue": theme["accent_blue"],
+            "orange": theme["accent_orange"],
+            "red": theme["accent_red"],
+            "yellow": theme["accent_yellow"],
+        }
+    
+    ToastManager.initialize(page, theme_getter=get_toast_theme)
+    
     chart_mgr = ChartManager(max_points=60)
     update_interval = 1.0
     current_view = "resumen"
@@ -231,11 +250,8 @@ def main(page: ft.Page):
         # Reconstruir la vista actual con nuevos colores
         rebuild_current_view()
         
-        page.snack_bar = ft.SnackBar(
-            content=ft.Text("☀️ Tema claro activado", color="#1E293B"),
-            bgcolor="#E2E8F0",
-        )
-        page.snack_bar.open = True
+        # Notificación toast
+        ToastManager.show_success("☀️ Tema claro activado")
         page.update()
     
     def on_theme_dark(e):
@@ -249,11 +265,8 @@ def main(page: ft.Page):
         # Reconstruir la vista actual con nuevos colores
         rebuild_current_view()
         
-        page.snack_bar = ft.SnackBar(
-            content=ft.Text("🌙 Tema oscuro activado"),
-            bgcolor=BLUE_PRIMARY,
-        )
-        page.snack_bar.open = True
+        # Notificación toast
+        ToastManager.show_success("🌙 Tema oscuro activado")
         page.update()
     
     def on_show_notifications(e):
@@ -718,15 +731,23 @@ def main(page: ft.Page):
                         'gpu_usage': gpu_info['usage'] if gpu_info else None,
                         'gpu_temp': gpu_info['temp'] if gpu_info else None,
                     }
-                    triggered_alerts = alert_manager.evaluate_all(current_metrics)
                     
-                    # Mostrar alerta en UI si se dispara alguna
-                    for alert in triggered_alerts:
-                        page.snack_bar = ft.SnackBar(
-                            content=ft.Text(f"⚠️ ALERTA: {alert.name} - {alert.metric} {alert.operator} {alert.threshold}"),
-                            bgcolor=RED_PRIMARY,
-                        )
-                        page.snack_bar.open = True
+                    # Verificar cada alerta habilitada
+                    for alert in alert_manager.get_all(only_enabled=True):
+                        metric_value = current_metrics.get(alert.metric)
+                        if metric_value is not None:
+                            # Determinar condición para ToastManager
+                            condition = "greater" if alert.operator in [">", ">="] else "less" if alert.operator in ["<", "<="] else "equal"
+                            
+                            # Mostrar alerta solo si cruza el umbral (no si se mantiene)
+                            # ToastManager internamente maneja rate limiting (1 por minuto por métrica)
+                            ToastManager.show_alert(
+                                alert_name=alert.name,
+                                metric=alert.metric,
+                                value=metric_value,
+                                threshold=alert.threshold,
+                                condition=condition
+                            )
                 except Exception as ae:
                     print(f"Error evaluando alertas: {ae}")
 

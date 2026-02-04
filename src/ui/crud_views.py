@@ -9,8 +9,10 @@ from datetime import datetime
 # Importar sistema de temas
 try:
     from .theme_manager import ThemeManager
+    from .toast_manager import ToastManager
 except ImportError:
     from src.ui.theme_manager import ThemeManager
+    from src.ui.toast_manager import ToastManager
 
 # Colores por defecto (fallback)
 DARK_BG = "#1A1B26"
@@ -232,24 +234,42 @@ def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None,
             
             status_text.value = "✅ Alerta creada exitosamente"
             status_text.color = c["green"]
+            
+            # Notificación Toast
+            ToastManager.show_success(f"Alerta creada correctamente")
+            
             refresh_alerts_list()
         except ValueError:
             status_text.value = "❌ Umbral debe ser un número"
             status_text.color = c["red"]
+            
+            # Notificación Toast
+            ToastManager.show_error("El umbral debe ser un número válido")
+            
             page.update()
     
     def toggle_alert(alert_id: int):
         """Alternar estado de alerta"""
-        alert_manager.toggle(alert_id)
-        refresh_alerts_list()
+        if alert_manager.toggle(alert_id):
+            alert = alert_manager.get(alert_id)
+            state = "activada" if alert.enabled else "desactivada"
+            ToastManager.show_info(f"Alerta '{alert.name}' {state}")
+            refresh_alerts_list()
     
     def delete_alert(alert_id: int):
         """Eliminar alerta"""
         c = get_crud_theme()
-        alert_manager.delete(alert_id)
-        status_text.value = "🗑️ Alerta eliminada"
-        status_text.color = c["yellow"]
-        refresh_alerts_list()
+        alert = alert_manager.get(alert_id)
+        name = alert.name if alert else "Alerta"
+        
+        if alert_manager.delete(alert_id):
+            status_text.value = "🗑️ Alerta eliminada"
+            status_text.color = c["yellow"]
+            
+            # Notificación Toast
+            ToastManager.show_info(f"Alerta '{name}' eliminada")
+            
+            refresh_alerts_list()
     
     # Formulario de creación
     form = ft.Container(
@@ -789,6 +809,10 @@ def build_config_view(db, page: ft.Page,
         
         status_text.value = "✅ Configuración guardada"
         status_text.color = c["green"]
+        
+        # Notificación con Toast
+        ToastManager.show_success("Configuración guardada correctamente")
+        
         page.update()
     
     def reset_config(e):
@@ -809,6 +833,10 @@ def build_config_view(db, page: ft.Page,
         
         status_text.value = "🔄 Configuración reseteada a valores por defecto"
         status_text.color = c["yellow"]
+        
+        # Notificación con Toast
+        ToastManager.show_info("Configuración restaurada a valores por defecto")
+        
         page.update()
     
     return ft.Container(

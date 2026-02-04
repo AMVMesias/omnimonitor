@@ -4,6 +4,11 @@
 
 cd "$(dirname "$0")"
 
+# Activar entorno virtual si existe
+if [ -d "venv" ]; then
+    source venv/bin/activate
+fi
+
 echo "🖥️  OmniMonitor - Modo Escritorio"
 echo "   Datos REALES del sistema"
 echo ""

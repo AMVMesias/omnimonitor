@@ -4,6 +4,11 @@
 
 cd "$(dirname "$0")"
 
+# Activar entorno virtual si existe
+if [ -d "venv" ]; then
+    source venv/bin/activate
+fi
+
 echo "🌐 OmniMonitor - Modo Web"
 echo "   Datos REALES via servidor API"
 echo ""

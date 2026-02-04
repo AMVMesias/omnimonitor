@@ -201,7 +201,6 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
     ) if expanded_content else None
 
     def toggle_details(e):
-        print(f"DEBUG: Toggle details clicked. details_container={details_container}")
         if details_container:
             details_container.visible = not details_container.visible
             try:
@@ -214,8 +213,8 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
                 icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
                 
                 e.control.update()
-            except Exception as ex:
-                print(f"DEBUG: Error updating icon/text: {ex}")
+            except Exception:
+                pass
             
             details_container.update()
             if e.page: e.page.update()
@@ -280,7 +279,6 @@ def create_ram_card(used_text: ft.Text, available_text: ft.Text,
     ) if expanded_content else None
 
     def toggle_details(e):
-        print(f"DEBUG: RAM Toggle clicked. details_container={details_container}")
         if details_container:
             details_container.visible = not details_container.visible
             try:
@@ -293,8 +291,8 @@ def create_ram_card(used_text: ft.Text, available_text: ft.Text,
                 icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
                 
                 e.control.update()
-            except Exception as ex:
-                print(f"DEBUG: Error updating icon/text: {ex}")
+            except Exception:
+                pass
             
             details_container.update()
             e.control.update()
@@ -391,7 +389,6 @@ def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
     ) if expanded_content else None
 
     def toggle_details(e):
-        print(f"DEBUG: Disk Toggle clicked. details_container={details_container}")
         if details_container:
             details_container.visible = not details_container.visible
             try:
@@ -404,8 +401,8 @@ def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
                 icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
                 
                 e.control.update()
-            except Exception as ex:
-                print(f"DEBUG: Error updating icon/text: {ex}")
+            except Exception:
+                pass
             
             details_container.update()
             e.control.update()

@@ -289,9 +289,9 @@ def main(page: ft.Page):
         
         # No llamamos update() aquí porque están dentro de las cards que quizas no estén en view
         # O si, deberíamos si queremos refresco en tiempo real
-        if cpu_details_container.visible: cpu_details_container.update()
-        if ram_details_container.visible: ram_details_container.update()
-        if disk_details_container.visible: disk_details_container.update()
+        if cpu_details_container.page: cpu_details_container.update()
+        if ram_details_container.page: ram_details_container.update()
+        if disk_details_container.page: disk_details_container.update()
 
     # ============ CREAR CARDS ============
     def build_cpu_card():

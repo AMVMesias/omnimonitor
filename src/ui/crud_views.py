@@ -313,9 +313,10 @@ def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None,
 
 def build_processes_view(process_manager, page: ft.Page,
                          on_theme_light=None, on_theme_dark=None, on_notifications=None) -> ft.Container:
-    """Construir vista de gestión de procesos"""
+    """Construir vista de gestión de procesos con carga asíncrona"""
     colors = get_crud_theme()
     
+    # Crear tabla vacía (se llena después)
     processes_table = ft.DataTable(
         columns=[
             ft.DataColumn(ft.Text("PID", color=colors["text"], size=12)),
@@ -331,6 +332,25 @@ def build_processes_view(process_manager, page: ft.Page,
         heading_row_color=colors["card"],
         data_row_color={"": colors["card"], "hovered": colors["border"]},
         column_spacing=20,
+    )
+    
+    # Loader para mostrar mientras carga
+    loading_indicator = ft.Container(
+        content=ft.Column([
+            ft.ProgressRing(width=40, height=40, stroke_width=3, color=colors["blue"]),
+            ft.Text("Cargando procesos...", size=14, color=colors["text_secondary"]),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
+           alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+        height=200,
+    )
+    
+    # Contenedor que alterna entre loader y tabla
+    table_container = ft.Container(
+        content=loading_indicator,  # Inicia con loader
+        bgcolor=colors["card"],
+        border_radius=15,
+        padding=15,
+        expand=True,
     )
     
     search_field = ft.TextField(
@@ -358,18 +378,23 @@ def build_processes_view(process_manager, page: ft.Page,
         height=40,
     )
     
-    stats_text = ft.Text("", size=12, color=colors["text_secondary"])
+    stats_text = ft.Text("Cargando estadísticas...", size=12, color=colors["text_secondary"])
     status_text = ft.Text("", size=12, color=colors["green"])
-    
-    def refresh_processes():
-        """Actualizar lista de procesos"""
+    is_loading = [False]  # Usar lista para poder modificar en closure
+
+    def load_processes_data():
+        """Carga los procesos (operación pesada - una sola iteración)"""
         c = get_crud_theme()
         process_manager.set_filter(search_field.value or "")
         process_manager.set_sort(sort_dropdown.value, reverse=(sort_dropdown.value != "name"))
         
-        processes = process_manager.get_all(limit=30)
-        stats = process_manager.get_stats()
+        # Usar método optimizado que obtiene procesos y stats en una sola iteración
+        processes, stats = process_manager.get_all_with_stats(limit=30)
         
+        return processes, stats, c
+    
+    def update_table_with_data(processes, stats, c):
+        """Actualiza la UI con los datos cargados"""
         stats_text.value = f"Total: {stats['total']} | Running: {stats['running']} | Threads: {stats['threads']}"
         
         processes_table.rows.clear()
@@ -405,7 +430,42 @@ def build_processes_view(process_manager, page: ft.Page,
             )
             processes_table.rows.append(row)
         
+        # Cambiar de loader a tabla
+        table_container.content = ft.Column([processes_table], scroll=ft.ScrollMode.AUTO)
+        is_loading[0] = False
         page.update()
+
+    def refresh_processes(show_loader=True):
+        """Actualizar lista de procesos con loader"""
+        if is_loading[0]:
+            return  # Evitar múltiples cargas simultáneas
+        
+        is_loading[0] = True
+        c = get_crud_theme()
+        
+        if show_loader:
+            # Mostrar loader
+            table_container.content = ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(width=40, height=40, stroke_width=3, color=c["blue"]),
+                    ft.Text("Cargando procesos...", size=14, color=c["text_secondary"]),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
+                   alignment=ft.MainAxisAlignment.CENTER, spacing=15),
+                height=200,
+            )
+            stats_text.value = "Cargando..."
+            page.update()
+        
+        # Cargar datos y actualizar tabla
+        try:
+            processes, stats, c = load_processes_data()
+            update_table_with_data(processes, stats, c)
+        except Exception as e:
+            status_text.value = f"❌ Error: {str(e)}"
+            status_text.color = c["red"]
+            table_container.content = ft.Text(f"Error al cargar procesos: {e}", color=c["red"])
+            is_loading[0] = False
+            page.update()
     
     def kill_process(pid: int, name: str):
         """Terminar proceso"""
@@ -418,7 +478,7 @@ def build_processes_view(process_manager, page: ft.Page,
                 status_text.value = f"❌ No se pudo terminar {name} (permisos insuficientes)"
                 status_text.color = c["red"]
             dialog.open = False
-            refresh_processes()
+            refresh_processes(show_loader=False)
         
         def cancel(e):
             dialog.open = False
@@ -441,18 +501,16 @@ def build_processes_view(process_manager, page: ft.Page,
         page.update()
     
     def on_search_change(e):
-        refresh_processes()
+        refresh_processes(show_loader=False)  # No mostrar loader en búsqueda
     
     def on_sort_change(e):
-        refresh_processes()
+        refresh_processes(show_loader=False)  # No mostrar loader en ordenamiento
     
     search_field.on_change = on_search_change
     sort_dropdown.on_change = on_sort_change
     
-    # Inicializar
-    refresh_processes()
-    
-    return ft.Container(
+    # Construir UI inmediatamente (sin esperar a que carguen los procesos)
+    view = ft.Container(
         content=ft.Column([
             create_crud_header("Procesos", "Monitorea y gestiona procesos del sistema", ft.Icons.MEMORY,
                                on_theme_light, on_theme_dark, on_notifications),
@@ -472,18 +530,25 @@ def build_processes_view(process_manager, page: ft.Page,
             ),
             ft.Row([stats_text, ft.Container(expand=True), status_text]),
             ft.Container(height=10),
-            ft.Container(
-                content=ft.Column([processes_table], scroll=ft.ScrollMode.AUTO),
-                bgcolor=colors["card"],
-                border_radius=15,
-                padding=15,
-                expand=True,
-            ),
+            table_container,
         ]),
         padding=25,
         expand=True,
         bgcolor=colors["bg"],
     )
+    
+    # Iniciar carga de procesos después de que la UI se haya renderizado
+    def on_view_mounted(e=None):
+        refresh_processes()
+    
+    # Usar page.run_task para cargar en background si está disponible
+    try:
+        page.run_task(lambda: on_view_mounted())
+    except:
+        # Fallback: cargar síncronamente
+        on_view_mounted()
+    
+    return view
 
 
 # ==================== VISTA DE HISTORIAL ====================
@@ -647,9 +712,13 @@ def build_config_view(db, page: ft.Page,
     config = db.get_all_config()
     status_text = ft.Text("", size=12, color=colors["green"])
     
+    # Obtener tema actual del ThemeManager (sincronizado con botones del header)
+    current_theme = ThemeManager.get_theme()
+    current_theme_name = current_theme.get("name", "dark")
+    
     # Campos de configuración
     theme_dropdown = ft.Dropdown(
-        value=config.get('theme', 'dark'),
+        value=current_theme_name,  # Usar tema actual del ThemeManager
         options=[
             ft.dropdown.Option("dark", "Oscuro"),
             ft.dropdown.Option("light", "Claro"),

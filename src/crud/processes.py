@@ -91,6 +91,49 @@ class ProcessManager:
         
         return processes[:limit]
     
+    def get_all_with_stats(self, limit: int = 50) -> tuple:
+        """Obtener lista de procesos Y estadísticas en una sola iteración (optimizado)"""
+        processes = []
+        running = sleeping = stopped = zombie = 0
+        total_threads = 0
+        
+        for proc in psutil.process_iter():
+            p = Process.from_psutil(proc)
+            if p:
+                # Contar estadísticas
+                if p.status == 'running':
+                    running += 1
+                elif p.status == 'sleeping':
+                    sleeping += 1
+                elif p.status == 'stopped':
+                    stopped += 1
+                elif p.status == 'zombie':
+                    zombie += 1
+                total_threads += p.num_threads
+                
+                # Aplicar filtro para la lista
+                if self._filter_text:
+                    if self._filter_text.lower() not in p.name.lower():
+                        continue
+                processes.append(p)
+        
+        # Ordenar
+        processes.sort(
+            key=lambda x: getattr(x, self._sort_by, 0) or 0,
+            reverse=self._sort_reverse
+        )
+        
+        stats = {
+            'total': running + sleeping + stopped + zombie,
+            'running': running,
+            'sleeping': sleeping,
+            'stopped': stopped,
+            'zombie': zombie,
+            'threads': total_threads
+        }
+        
+        return processes[:limit], stats
+    
     def get(self, pid: int) -> Optional[Process]:
         """Obtener proceso por PID"""
         try:
@@ -197,8 +240,11 @@ class ProcessManager:
             except:
                 pass
         
+        # Usar el conteo de esta misma iteración en lugar de llamar get_count() que itera de nuevo
+        total = running + sleeping + stopped + zombie
+        
         return {
-            'total': self.get_count(),
+            'total': total if total > 0 else len(list(psutil.pids())),
             'running': running,
             'sleeping': sleeping,
             'stopped': stopped,

@@ -134,6 +134,59 @@ class ProcessManager:
         
         return processes[:limit], stats
     
+    def get_top_cpu(self, limit: int = 5) -> List[Process]:
+        """Obtener top procesos por uso de CPU"""
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                # Usar info dict para evitar llamadas extra
+                p = proc.info
+                # Crear objeto Process mínimo necesario
+                if p['cpu_percent'] is not None:
+                    process = Process(
+                        pid=p['pid'],
+                        name=p['name'],
+                        cpu_percent=p['cpu_percent'],
+                        memory_percent=p['memory_percent'] or 0,
+                        memory_mb=0, # No necesario para esta vista rápida
+                        status="",
+                        username="",
+                        num_threads=0,
+                        create_time=datetime.now()
+                    )
+                    processes.append(process)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        
+        processes.sort(key=lambda x: x.cpu_percent, reverse=True)
+        return processes[:limit]
+    
+    def get_top_memory(self, limit: int = 5) -> List[Process]:
+        """Obtener top procesos por uso de RAM"""
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info']):
+            try:
+                p = proc.info
+                mem_mb = p['memory_info'].rss / (1024 * 1024)
+                
+                process = Process(
+                    pid=p['pid'],
+                    name=p['name'],
+                    cpu_percent=p['cpu_percent'] or 0,
+                    memory_percent=0,
+                    memory_mb=mem_mb,
+                    status="",
+                    username="",
+                    num_threads=0,
+                    create_time=datetime.now()
+                )
+                processes.append(process)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        
+        processes.sort(key=lambda x: x.memory_mb, reverse=True)
+        return processes[:limit]
+    
     def get(self, pid: int) -> Optional[Process]:
         """Obtener proceso por PID"""
         try:

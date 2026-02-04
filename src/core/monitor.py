@@ -50,9 +50,10 @@ class SystemMonitor:
             "free": mem.available
         }
 
-    def get_disk_usage(self, path: str = '/') -> dict:
-        """Retorna diccionario con estadísticas de disco."""
+    def get_disk_usage(self, path: str = None) -> dict:
+        """Retorna diccionario con estadísticas de disco. Si path es None, usa root."""
         try:
+            path = path or '/' if os.name != 'nt' else 'C:\\'
             disk = psutil.disk_usage(path)
             return {
                 "percent": disk.percent,
@@ -63,33 +64,55 @@ class SystemMonitor:
         except Exception:
             return {"percent": 0, "used": 0, "total": 0, "free": 0}
 
-    def get_disk_info(self) -> dict:
-        """Retorna información del disco principal."""
+    def get_disk_info(self) -> list:
+        """Retorna información de todas las particiones del disco."""
+        disks = []
         try:
             partitions = psutil.disk_partitions()
             for partition in partitions:
-                if partition.mountpoint == '/':
-                    device = partition.device.split('/')[-1]
-                    # Detectar si es SSD o HDD
+                # Filtrar dispositivos virtuales o irrelevantes si es necesario
+                # (en Windows queremos ver C:, D:, etc.)
+                usage = self.get_disk_usage(partition.mountpoint)
+                
+                device = partition.device.split('/')[-1] if os.name != 'nt' else partition.device
+                
+                # Detectar SSD/HDD (solo Linux)
+                disk_type = "Drive"
+                if os.name != 'nt':
                     rotational_path = f'/sys/block/{device[:3]}/queue/rotational'
-                    is_ssd = False
                     try:
                         if os.path.exists(rotational_path):
                             with open(rotational_path) as f:
                                 is_ssd = f.read().strip() == '0'
-                    except Exception:
+                            disk_type = "SSD" if is_ssd else "HDD"
+                    except:
                         pass
-                    
-                    disk_type = "NVMe SSD" if "nvme" in device else ("SSD" if is_ssd else "HDD")
-                    return {
-                        "device": disk_type,
-                        "partition": partition.device,
-                        "fstype": partition.fstype,
-                        "mountpoint": partition.mountpoint
-                    }
+                else:
+                    disk_type = partition.fstype  # En Windows mostramos el sistema de archivos como tipo
+                
+                disks.append({
+                    "device": device,
+                    "mountpoint": partition.mountpoint,
+                    "fstype": partition.fstype,
+                    "type": disk_type,
+                    "usage": usage
+                })
         except Exception:
             pass
-        return {"device": "Disk", "partition": "/", "fstype": "unknown", "mountpoint": "/"}
+        return disks
+
+    def get_swap_memory(self) -> dict:
+        """Retorna información de memoria Swap."""
+        try:
+            swap = psutil.swap_memory()
+            return {
+                "total": swap.total,
+                "used": swap.used,
+                "free": swap.free,
+                "percent": swap.percent
+            }
+        except:
+            return {"total": 0, "used": 0, "free": 0, "percent": 0}
 
     def get_disk_io(self) -> dict:
         """Retorna velocidades de lectura/escritura de disco en MB/s."""

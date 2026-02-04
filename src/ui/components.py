@@ -186,11 +186,42 @@ def create_detail_button(on_click) -> ft.Container:
     )
 
 
+
 def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container, 
                     percent_text: ft.Text, temp_text: ft.Text, 
-                    speed_text: ft.Text, on_details_click) -> ft.Container:
-    """Crea la tarjeta de CPU con diseño circular"""
+                    speed_text: ft.Text, on_details_click, 
+                    expanded_content: ft.Control = None) -> ft.Container:
+    """Crea la tarjeta de CPU con diseño circular y detalles expandibles"""
     colors = get_theme_colors()
+    
+    details_container = ft.Container(
+        content=expanded_content,
+        visible=False,
+        animate_opacity=300,
+    ) if expanded_content else None
+
+    def toggle_details(e):
+        print(f"DEBUG: Toggle details clicked. details_container={details_container}")
+        if details_container:
+            details_container.visible = not details_container.visible
+            try:
+                # Actualizar icono y texto
+                row = e.control.content
+                text = row.controls[0]
+                icon = row.controls[1]
+                
+                text.value = "Ocultar Detalles" if details_container.visible else "Ver Detalles"
+                icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
+                
+                e.control.update()
+            except Exception as ex:
+                print(f"DEBUG: Error updating icon/text: {ex}")
+            
+            details_container.update()
+            if e.page: e.page.update()
+            
+    action = toggle_details if expanded_content else on_details_click
+
     return ft.Container(
         content=ft.Column([
             ft.Row([
@@ -220,24 +251,57 @@ def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container,
                 ft.Container(width=10),
                 speed_text,
             ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(height=10),
+            details_container if details_container else ft.Container(),
             ft.Container(expand=True),
             ft.Row([
                 ft.Container(expand=True),
-                create_detail_button(on_details_click),
+                create_detail_button(action),
             ]),
         ]),
         bgcolor=colors["card"],
         border_radius=15,
         padding=20,
         border=ft.border.all(1, colors["border"]),
+        animate_size=300,
     )
 
 
 def create_ram_card(used_text: ft.Text, available_text: ft.Text,
                     progress_bar: ft.ProgressBar, history_chart: ft.Container,
-                    on_details_click) -> ft.Container:
-    """Crea la tarjeta de RAM con barra de progreso y mini gráfico"""
+                    on_details_click, expanded_content: ft.Control = None) -> ft.Container:
+    """Crea la tarjeta de RAM con barra de progreso y detalles expandibles"""
     colors = get_theme_colors()
+    
+    details_container = ft.Container(
+        content=expanded_content,
+        visible=False,
+        animate_opacity=300,
+    ) if expanded_content else None
+
+    def toggle_details(e):
+        print(f"DEBUG: RAM Toggle clicked. details_container={details_container}")
+        if details_container:
+            details_container.visible = not details_container.visible
+            try:
+                # Actualizar icono y texto
+                row = e.control.content
+                text = row.controls[0]
+                icon = row.controls[1]
+                
+                text.value = "Ocultar Detalles" if details_container.visible else "Ver Detalles"
+                icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
+                
+                e.control.update()
+            except Exception as ex:
+                print(f"DEBUG: Error updating icon/text: {ex}")
+            
+            details_container.update()
+            e.control.update()
+            if e.page: e.page.update()
+            
+    action = toggle_details if expanded_content else on_details_click
+
     return ft.Container(
         content=ft.Column([
             ft.Row([
@@ -254,16 +318,19 @@ def create_ram_card(used_text: ft.Text, available_text: ft.Text,
             ]),
             ft.Container(height=15),
             history_chart,
+            ft.Container(height=10),
+            details_container if details_container else ft.Container(),
             ft.Container(expand=True),
             ft.Row([
                 ft.Container(expand=True),
-                create_detail_button(on_details_click),
+                create_detail_button(action),
             ]),
         ]),
         bgcolor=colors["card"],
         border_radius=15,
         padding=20,
         border=ft.border.all(1, colors["border"]),
+        animate_size=300,
     )
 
 
@@ -313,9 +380,39 @@ def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
 
 def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
                      speed_text: ft.Text, progress_bar: ft.ProgressBar,
-                     on_details_click) -> ft.Container:
-    """Crea la tarjeta de disco con barra de progreso"""
+                     on_details_click, expanded_content: ft.Control = None) -> ft.Container:
+    """Crea la tarjeta de disco con barra de progreso y detalles expandibles"""
     colors = get_theme_colors()
+    
+    details_container = ft.Container(
+        content=expanded_content,
+        visible=False,
+        animate_opacity=300,
+    ) if expanded_content else None
+
+    def toggle_details(e):
+        print(f"DEBUG: Disk Toggle clicked. details_container={details_container}")
+        if details_container:
+            details_container.visible = not details_container.visible
+            try:
+                # Actualizar icono y texto
+                row = e.control.content
+                text = row.controls[0]
+                icon = row.controls[1]
+                
+                text.value = "Ocultar Detalles" if details_container.visible else "Ver Detalles"
+                icon.name = ft.Icons.KEYBOARD_ARROW_UP if details_container.visible else ft.Icons.CHEVRON_RIGHT
+                
+                e.control.update()
+            except Exception as ex:
+                print(f"DEBUG: Error updating icon/text: {ex}")
+            
+            details_container.update()
+            e.control.update()
+            if e.page: e.page.update()
+            
+    action = toggle_details if expanded_content else on_details_click
+
     return ft.Container(
         content=ft.Column([
             ft.Row([
@@ -335,16 +432,19 @@ def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
             ]),
             ft.Container(height=10),
             speed_text,
+            ft.Container(height=10),
+            details_container if details_container else ft.Container(),
             ft.Container(expand=True),
             ft.Row([
                 ft.Container(expand=True),
-                create_detail_button(on_details_click),
+                create_detail_button(action),
             ]),
         ]),
         bgcolor=colors["card"],
         border_radius=15,
         padding=20,
         border=ft.border.all(1, colors["border"]),
+        animate_size=300,
     )
 
 

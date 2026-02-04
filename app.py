@@ -206,17 +206,106 @@ def main(page: ft.Page):
     status_text = ft.Text(f"Status: Conectado | {mode_indicator}", size=12, color=BLUE_PRIMARY)
     version_text = ft.Text("Versión 2.2.0", size=12, color=TEXT_GRAY)
 
+    # ============ CONTENEDORES DE DETALLES (EXPANDIBLES) ============
+    cpu_details_container = ft.Column(spacing=10)
+    ram_details_container = ft.Column(spacing=10)
+    disk_details_container = ft.Column(spacing=10)
+
+    def update_details_content():
+        """Actualizar el contenido de los desplegables (Top procesos, etc.)"""
+        theme = ThemeManager.get_theme()
+        
+        # --- CPU DETALLES ---
+        # Uso por núcleo
+        cores = monitor.get_cpu_per_core()
+        core_bars = []
+        for i, usage in enumerate(cores):
+            color = theme["accent_red"] if usage > 80 else (theme["accent_yellow"] if usage > 50 else theme["accent_green"])
+            core_bars.append(
+                ft.Column([
+                    ft.Row([
+                        ft.Text(f"Core {i}", size=10, color=theme["text_secondary"]),
+                        ft.Text(f"{usage}%", size=10, weight=ft.FontWeight.BOLD, color=theme["text_primary"]),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.ProgressBar(value=usage/100, color=color, bgcolor=theme["bg_hover"], height=4),
+                ], spacing=2)
+            )
+        
+        # Top Procesos CPU
+        top_cpu = process_manager.get_top_cpu(3)
+        top_cpu_items = [ft.Text("Top Procesos:", size=12, weight=ft.FontWeight.BOLD, color=theme["text_secondary"])]
+        for p in top_cpu:
+            top_cpu_items.append(
+                ft.Row([
+                    ft.Text(p.name[:15], size=11, color=theme["text_primary"]),
+                    ft.Text(f"{p.cpu_percent:.1f}%", size=11, color=theme["accent_red"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+            )
+
+        cpu_details_container.controls = [
+            ft.Divider(color=theme["border_primary"]),
+            ft.GridView(runs_count=2, max_extent=150, child_aspect_ratio=4, controls=core_bars),
+            ft.Container(height=5),
+            ft.Column(top_cpu_items, spacing=2)
+        ]
+
+        # --- RAM DETALLES ---
+        # Top Procesos RAM
+        top_mem = process_manager.get_top_memory(3)
+        top_mem_items = [ft.Text("Top Memoria:", size=12, weight=ft.FontWeight.BOLD, color=theme["text_secondary"])]
+        for p in top_mem:
+            top_mem_items.append(
+                ft.Row([
+                    ft.Text(p.name[:15], size=11, color=theme["text_primary"]),
+                    ft.Text(f"{p.memory_mb:.0f} MB", size=11, color=theme["accent_blue"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+            )
+            
+        ram_details_container.controls = [
+             ft.Divider(color=theme["border_primary"]),
+             ft.Column(top_mem_items, spacing=2)
+        ]
+
+        # --- DISK DETALLES ---
+        # Particiones (simplificado)
+        partitions = monitor.get_disk_info()
+        part_items = [ft.Text("Particiones:", size=12, weight=ft.FontWeight.BOLD, color=theme["text_secondary"])]
+        for p in partitions:
+            usage = p['usage']
+            part_items.append(
+                ft.Column([
+                    ft.Row([
+                        ft.Text(f"{p['device']}", size=11, color=theme["text_primary"]),
+                        ft.Text(f"{usage['percent']}%", size=11, color=theme["text_primary"]),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.ProgressBar(value=usage['percent']/100, color=theme["accent_blue"], height=3),
+                ], spacing=2)
+            )
+
+        disk_details_container.controls = [
+            ft.Divider(color=theme["border_primary"]),
+            ft.Column(part_items, spacing=5)
+        ]
+        
+        # No llamamos update() aquí porque están dentro de las cards que quizas no estén en view
+        # O si, deberíamos si queremos refresco en tiempo real
+        if cpu_details_container.visible: cpu_details_container.update()
+        if ram_details_container.visible: ram_details_container.update()
+        if disk_details_container.visible: disk_details_container.update()
+
     # ============ CREAR CARDS ============
     def build_cpu_card():
         return create_cpu_card(
             cpu_name_text, cpu_progress, cpu_percent_text, 
-            cpu_temp_text, cpu_speed_text, on_details_click
+            cpu_temp_text, cpu_speed_text, on_details_click,
+            expanded_content=cpu_details_container
         )
 
     def build_ram_card():
         return create_ram_card(
             ram_used_text, ram_available_text, ram_bar, 
-            ram_history_chart, on_details_click
+            ram_history_chart, on_details_click,
+            expanded_content=ram_details_container
         )
 
     def build_gpu_card():
@@ -228,7 +317,8 @@ def main(page: ft.Page):
     def build_disk_card():
         return create_disk_card(
             disk_name_text, disk_used_text, disk_speed_text,
-            disk_bar, on_details_click
+            disk_bar, on_details_click,
+            expanded_content=disk_details_container
         )
 
     def build_network_card():
@@ -384,29 +474,125 @@ def main(page: ft.Page):
             bgcolor=ThemeManager.get_theme()["bg_primary"],
         )
 
+
     def build_cpu_detail_view():
         theme = ThemeManager.get_theme()
+        
+        # Info básica
+        user_info = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.INFO_OUTLINE, color=theme["accent_blue"], size=20),
+                    ft.Text("Información del Procesador", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                ft.Container(height=15),
+                ft.Text(f"Núcleos físicos: {monitor.get_cpu_count()[0]}", color=theme["text_secondary"]),
+                ft.Text(f"Núcleos lógicos: {monitor.get_cpu_count()[1]}", color=theme["text_secondary"]),
+                ft.Text(f"Arquitectura: {monitor.get_system_info()['architecture']}", color=theme["text_secondary"]),
+                ft.Text(f"Frecuencia actual: {monitor.get_cpu_freq() or 'N/A'} GHz", color=theme["text_secondary"]),
+            ]),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=20,
+            expand=True,
+        )
+
+        # Uso por núcleo (construido dinámicamente)
+        cores_usage = monitor.get_cpu_per_core()
+        core_controls = []
+        for i, usage in enumerate(cores_usage):
+            color = theme["accent_red"] if usage > 80 else (theme["accent_yellow"] if usage > 50 else theme["accent_green"])
+            core_controls.append(
+                ft.Column([
+                    ft.Row([
+                        ft.Text(f"Núcleo {i}", size=12, color=theme["text_secondary"]),
+                        ft.Text(f"{usage}%", size=12, weight=ft.FontWeight.BOLD, color=theme["text_primary"]),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.ProgressBar(value=usage/100, color=color, bgcolor=theme["bg_hover"], height=6),
+                ], spacing=3)
+            )
+            
+        cores_expansion = ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Row([
+                    ft.Icon(ft.Icons.GRID_VIEW, color=theme["accent_purple"], size=20),
+                    ft.Text("Uso por Núcleo", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                controls=[
+                    ft.Container(height=15),
+                    ft.GridView(
+                        runs_count=2,
+                        max_extent=250,
+                        child_aspect_ratio=3,
+                        spacing=15,
+                        run_spacing=15,
+                        controls=core_controls,
+                    ),
+                    ft.Container(height=10),
+                ],
+
+                collapsed_text_color=theme["text_primary"],
+                text_color=theme["text_primary"],
+                icon_color=theme["text_secondary"],
+                bgcolor=ft.Colors.TRANSPARENT,
+            ),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=5,
+        )
+
+        # Top Procesos CPU
+        top_cpu = process_manager.get_top_cpu(5)
+        top_cpu_rows = []
+        for p in top_cpu:
+            top_cpu_rows.append(
+                ft.DataRow(cells=[
+                    ft.DataCell(ft.Text(str(p.pid), color=theme["text_secondary"], size=12)),
+                    ft.DataCell(ft.Text(p.name[:20], color=theme["text_primary"], size=12, weight=ft.FontWeight.BOLD)),
+                    ft.DataCell(ft.Text(f"{p.cpu_percent:.1f}%", color=theme["accent_red"] if p.cpu_percent > 10 else theme["text_primary"], size=12)),
+                ])
+            )
+            
+        top_processes_expansion = ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Row([
+                    ft.Icon(ft.Icons.SPEED, color=theme["accent_red"], size=20),
+                    ft.Text("Top 5 Procesos (CPU)", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                controls=[
+                    ft.DataTable(
+                        columns=[
+                            ft.DataColumn(ft.Text("PID", size=12, color=theme["text_secondary"])),
+                            ft.DataColumn(ft.Text("Nombre", size=12, color=theme["text_secondary"])),
+                            ft.DataColumn(ft.Text("Uso", size=12, color=theme["text_secondary"])),
+                        ],
+                        rows=top_cpu_rows,
+                        heading_row_height=30,
+                        data_row_min_height=40,
+                    )
+                ],
+
+                collapsed_text_color=theme["text_primary"],
+                text_color=theme["text_primary"],
+                icon_color=theme["text_secondary"],
+                bgcolor=ft.Colors.TRANSPARENT,
+            ),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=5,
+        )
+
         return ft.Container(
             content=ft.Column([
                 create_header("CPU - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
-                ft.Container(height=20),
+                ft.Container(height=10),
                 build_cpu_card(),
                 ft.Container(height=20),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Icon(ft.Icons.INFO_OUTLINE, color=theme["accent_blue"], size=20),
-                            ft.Text("Información del Procesador", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
-                        ]),
-                        ft.Container(height=15),
-                        ft.Text(f"Núcleos físicos: {monitor.get_cpu_count()[0]}", color=theme["text_secondary"]),
-                        ft.Text(f"Núcleos lógicos: {monitor.get_cpu_count()[1]}", color=theme["text_secondary"]),
-                        ft.Text(f"Arquitectura: {monitor.get_system_info()['architecture']}", color=theme["text_secondary"]),
-                    ]),
-                    bgcolor=theme["bg_card"],
-                    border_radius=15,
-                    padding=20,
-                )
+                user_info,
+                ft.Container(height=10),
+                top_processes_expansion,
+                ft.Container(height=10),
+                cores_expansion,
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
@@ -415,11 +601,90 @@ def main(page: ft.Page):
 
     def build_ram_detail_view():
         theme = ThemeManager.get_theme()
+        
+        # Info Swap
+        swap = monitor.get_swap_memory()
+        swap_used_gb = swap['used'] / (1024**3)
+        swap_total_gb = swap['total'] / (1024**3)
+        swap_percent = swap['percent']
+        
+        swap_expansion = ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Row([
+                    ft.Icon(ft.Icons.MEMORY, color=theme["accent_orange"], size=20),
+                    ft.Text("Memoria Virtual (Swap)", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                controls=[
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.Text("Usado / Total:", color=theme["text_secondary"]),
+                        ft.Text(f"{swap_used_gb:.1f} GB / {swap_total_gb:.1f} GB", color=theme["text_primary"], weight=ft.FontWeight.BOLD),
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.ProgressBar(value=swap_percent/100, color=theme["accent_orange"], bgcolor=theme["bg_hover"], height=8),
+                    ft.Text(f"{swap_percent}% Utilizado", size=12, color=theme["text_secondary"], text_align=ft.TextAlign.RIGHT),
+                    ft.Container(height=10),
+                ],
+
+                collapsed_text_color=theme["text_primary"],
+                text_color=theme["text_primary"],
+                icon_color=theme["text_secondary"],
+                bgcolor=ft.Colors.TRANSPARENT,
+            ),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=5,
+        )
+
+        # Top Procesos RAM
+        top_mem = process_manager.get_top_memory(5)
+        top_mem_rows = []
+        for p in top_mem:
+            top_mem_rows.append(
+                ft.DataRow(cells=[
+                    ft.DataCell(ft.Text(str(p.pid), color=theme["text_secondary"], size=12)),
+                    ft.DataCell(ft.Text(p.name[:20], color=theme["text_primary"], size=12, weight=ft.FontWeight.BOLD)),
+                    ft.DataCell(ft.Text(f"{p.memory_mb:.0f} MB", color=theme["accent_blue"], size=12)),
+                ])
+            )
+
+        top_processes_expansion = ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Row([
+                    ft.Icon(ft.Icons.TABLE_CHART, color=theme["accent_blue"], size=20),
+                    ft.Text("Top 5 Procesos (RAM)", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                controls=[
+                    ft.DataTable(
+                        columns=[
+                            ft.DataColumn(ft.Text("PID", size=12, color=theme["text_secondary"])),
+                            ft.DataColumn(ft.Text("Nombre", size=12, color=theme["text_secondary"])),
+                            ft.DataColumn(ft.Text("Uso", size=12, color=theme["text_secondary"])),
+                        ],
+                        rows=top_mem_rows,
+                        heading_row_height=30,
+                        data_row_min_height=40,
+                    )
+                ],
+
+                collapsed_text_color=theme["text_primary"],
+                text_color=theme["text_primary"],
+                icon_color=theme["text_secondary"],
+                bgcolor=ft.Colors.TRANSPARENT,
+            ),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=5,
+        )
+
         return ft.Container(
             content=ft.Column([
                 create_header("RAM - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
-                ft.Container(height=20),
+                ft.Container(height=10),
                 build_ram_card(),
+                ft.Container(height=20),
+                swap_expansion,
+                ft.Container(height=10),
+                top_processes_expansion,
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
@@ -428,11 +693,115 @@ def main(page: ft.Page):
 
     def build_disk_detail_view():
         theme = ThemeManager.get_theme()
+        
+        # IO Estadísticas
+        io_stats = monitor.get_disk_io()
+        read_speed = io_stats['read_speed'] if io_stats else 0
+        write_speed = io_stats['write_speed'] if io_stats else 0
+        
+        io_expansion = ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Row([
+                    ft.Icon(ft.Icons.SPEED, color=theme["accent_purple"], size=20),
+                    ft.Text("Velocidad de Disco (I/O)", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                controls=[
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.Column([
+                            ft.Text("Lectura", color=theme["text_secondary"], size=12),
+                            ft.Text(f"{read_speed:.1f} MB/s", color=theme["accent_green"], size=20, weight=ft.FontWeight.BOLD),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Column([
+                            ft.Text("Escritura", color=theme["text_secondary"], size=12),
+                            ft.Text(f"{write_speed:.1f} MB/s", color=theme["accent_red"], size=20, weight=ft.FontWeight.BOLD),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    ], alignment=ft.MainAxisAlignment.SPACE_EVENLY, expand=True),
+                    ft.Container(height=10),
+                ],
+
+                collapsed_text_color=theme["text_primary"],
+                text_color=theme["text_primary"],
+                icon_color=theme["text_secondary"],
+                bgcolor=ft.Colors.TRANSPARENT,
+            ),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=5,
+        )
+        
+        # Lista de Particiones
+        partitions = monitor.get_disk_info()
+        partition_controls = []
+        
+        for p in partitions:
+            usage = p['usage']
+            used_gb = usage['used'] / (1024**3)
+            total_gb = usage['total'] / (1024**3)
+            percent = usage['percent']
+            
+            p_color = theme["accent_red"] if percent > 90 else (theme["accent_yellow"] if percent > 70 else theme["accent_blue"])
+            
+            partition_controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Row([
+                                ft.Icon(ft.Icons.STORAGE, color=theme["text_secondary"]),
+                                ft.Text(f"{p['device']} ({p['mountpoint']})", weight=ft.FontWeight.BOLD, color=theme["text_primary"]),
+                            ]),
+                            ft.Container(
+                                content=ft.Text(p['fstype'].upper(), size=10, color=theme["bg_card"]),
+                                bgcolor=theme["text_secondary"],
+                                padding=ft.Padding(left=8, right=8, top=2, bottom=2),
+                                border_radius=10,
+                            )
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Container(height=10),
+                        ft.ProgressBar(value=percent/100, color=p_color, bgcolor=theme["bg_hover"], height=10, border_radius=5),
+                        ft.Row([
+                            ft.Text(f"{used_gb:.1f} GB usados", size=12, color=theme["text_secondary"]),
+                            ft.Text(f"{total_gb:.1f} GB total", size=12, color=theme["text_secondary"]),
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ]),
+                    bgcolor=theme["bg_hover"], # Ligeramente más claro
+                    border_radius=10,
+                    padding=15,
+                    margin=ft.Margin(left=0, top=0, right=0, bottom=10)
+                )
+            )
+
+        partitions_expansion = ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Row([
+                    ft.Icon(ft.Icons.STORAGE, color=theme["accent_blue"], size=20),
+                    ft.Text("Particiones y Dispositivos", size=16, weight=ft.FontWeight.W_500, color=theme["text_primary"]),
+                ]),
+                controls=[
+                    ft.Container(height=10),
+                    ft.Column(partition_controls),
+                    ft.Container(height=10),
+                ],
+
+                collapsed_text_color=theme["text_primary"],
+                text_color=theme["text_primary"],
+                icon_color=theme["text_secondary"],
+                bgcolor=ft.Colors.TRANSPARENT,
+            ),
+            bgcolor=theme["bg_card"],
+            border_radius=15,
+            padding=5,
+        )
+
         return ft.Container(
             content=ft.Column([
                 create_header("Disco - Detalles", on_theme_toggle=on_theme_light, on_dark_mode=on_theme_dark, on_notifications=on_show_notifications),
-                ft.Container(height=20),
+                ft.Container(height=10),
                 build_disk_card(),
+                ft.Container(height=20),
+                io_expansion,
+                ft.Container(height=10),
+                partitions_expansion,
             ], scroll=ft.ScrollMode.AUTO),
             padding=25,
             expand=True,
@@ -644,11 +1013,14 @@ def main(page: ft.Page):
 
                 # Disco
                 disk = monitor.get_disk_usage()
-                disk_info = monitor.get_disk_info()
+                disk_info_list = monitor.get_disk_info()
+                main_disk = disk_info_list[0] if disk_info_list else {}
+                
                 used_disk_gb = disk['used'] / (1024**3)
                 total_disk_gb = disk['total'] / (1024**3)
                 
-                disk_name_text.value = f"Disco: {disk_info.get('device', 'SSD')} {total_disk_gb:.0f}GB"
+                disk_device = main_disk.get('device', 'SSD')
+                disk_name_text.value = f"Disco: {disk_device} {total_disk_gb:.0f}GB"
                 disk_used_text.value = f"{used_disk_gb:.0f}GB Used ({disk['percent']:.0f}%)"
                 disk_bar.value = disk['percent'] / 100
                 
@@ -721,6 +1093,14 @@ def main(page: ft.Page):
                     except Exception as he:
                         print(f"Error guardando historial: {he}")
                 
+                # ============ ACTUALIZAR DETALLES EXPANDIBLES ============
+                try:
+                    # Actualizar solo si hay contenedores visibles para mejorar performance
+                    # O actualizar siempre si queremos que esté listo al abrir
+                    update_details_content()
+                except Exception as dex:
+                     print(f"Error actualizando detalles: {dex}")
+
                 # ============ CRUD: Evaluar alertas ============
                 try:
                     current_metrics = {

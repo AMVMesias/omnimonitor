@@ -1,0 +1,741 @@
+"""
+Vistas CRUD para OmniMonitor
+Interfaz gráfica para Alertas, Procesos, Historial y Configuración
+"""
+import flet as ft
+from typing import Callable, Optional
+from datetime import datetime
+
+# Colores del tema
+DARK_BG = "#1A1B26"
+CARD_BG = "#24283B"
+SIDEBAR_BG = "#1F2335"
+GREEN_PRIMARY = "#9ECE6A"
+BLUE_PRIMARY = "#7AA2F7"
+ORANGE_PRIMARY = "#FF9E64"
+RED_PRIMARY = "#F7768E"
+YELLOW_PRIMARY = "#E0AF68"
+PURPLE_PRIMARY = "#BB9AF7"
+TEXT_WHITE = "#C0CAF5"
+TEXT_GRAY = "#565F89"
+
+
+def create_crud_header(title: str, subtitle: str = "", icon: str = None) -> ft.Container:
+    """Crear encabezado para vistas CRUD"""
+    return ft.Container(
+        content=ft.Row([
+            ft.Icon(icon, color=BLUE_PRIMARY, size=28) if icon else ft.Container(),
+            ft.Column([
+                ft.Text(title, size=24, weight=ft.FontWeight.BOLD, color=TEXT_WHITE),
+                ft.Text(subtitle, size=13, color=TEXT_GRAY) if subtitle else ft.Container(),
+            ], spacing=2),
+        ], spacing=15),
+        padding=ft.Padding(0, 0, 0, 15),
+    )
+
+
+# ==================== VISTA DE ALERTAS ====================
+
+def build_alerts_view(alert_manager, page: ft.Page, on_refresh: Callable = None) -> ft.Container:
+    """Construir vista de gestión de alertas"""
+    
+    alerts_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
+    
+    # Campos del formulario
+    name_field = ft.TextField(
+        label="Nombre de la alerta",
+        hint_text="Ej: CPU Alto",
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+        width=300,
+    )
+    
+    metric_dropdown = ft.Dropdown(
+        label="Métrica",
+        options=[
+            ft.dropdown.Option("cpu_usage", "Uso de CPU (%)"),
+            ft.dropdown.Option("cpu_temp", "Temperatura CPU (°C)"),
+            ft.dropdown.Option("ram_usage", "Uso de RAM (%)"),
+            ft.dropdown.Option("disk_usage", "Uso de Disco (%)"),
+            ft.dropdown.Option("gpu_usage", "Uso de GPU (%)"),
+            ft.dropdown.Option("gpu_temp", "Temperatura GPU (°C)"),
+        ],
+        width=200,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+    )
+    
+    operator_dropdown = ft.Dropdown(
+        label="Condición",
+        options=[
+            ft.dropdown.Option(">", "Mayor que (>)"),
+            ft.dropdown.Option("<", "Menor que (<)"),
+            ft.dropdown.Option(">=", "Mayor o igual (>=)"),
+            ft.dropdown.Option("<=", "Menor o igual (<=)"),
+        ],
+        value=">",
+        width=150,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+    )
+    
+    threshold_field = ft.TextField(
+        label="Umbral",
+        hint_text="Ej: 80",
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+        width=100,
+        keyboard_type=ft.KeyboardType.NUMBER,
+    )
+    
+    status_text = ft.Text("", color=GREEN_PRIMARY, size=12)
+    
+    def refresh_alerts_list():
+        """Actualizar lista de alertas"""
+        alerts_list.controls.clear()
+        alerts = alert_manager.get_all()
+        
+        if not alerts:
+            alerts_list.controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.NOTIFICATIONS_OFF, color=TEXT_GRAY, size=48),
+                        ft.Text("No hay alertas configuradas", color=TEXT_GRAY, size=14),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    padding=40,
+                    alignment=ft.alignment.center,
+                )
+            )
+        else:
+            for alert in alerts:
+                metric_label = alert_manager.METRICS_LABELS.get(alert.metric, alert.metric)
+                
+                alert_card = ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            content=ft.Icon(
+                                ft.Icons.NOTIFICATIONS_ACTIVE if alert.enabled else ft.Icons.NOTIFICATIONS_OFF,
+                                color=GREEN_PRIMARY if alert.enabled else TEXT_GRAY,
+                                size=24
+                            ),
+                            padding=10,
+                        ),
+                        ft.Column([
+                            ft.Text(alert.name, size=15, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                            ft.Text(
+                                f"{metric_label} {alert.operator} {alert.threshold}",
+                                size=12, color=TEXT_GRAY
+                            ),
+                            ft.Text(
+                                f"Disparada {alert.triggered_count} veces",
+                                size=11, color=YELLOW_PRIMARY if alert.triggered_count > 0 else TEXT_GRAY
+                            ),
+                        ], spacing=2, expand=True),
+                        ft.Switch(
+                            value=alert.enabled,
+                            active_color=GREEN_PRIMARY,
+                            on_change=lambda e, aid=alert.id: toggle_alert(aid),
+                        ),
+                        ft.IconButton(
+                            ft.Icons.DELETE_OUTLINE,
+                            icon_color=RED_PRIMARY,
+                            tooltip="Eliminar",
+                            on_click=lambda e, aid=alert.id: delete_alert(aid),
+                        ),
+                    ], spacing=10),
+                    bgcolor=CARD_BG,
+                    border_radius=10,
+                    padding=15,
+                )
+                alerts_list.controls.append(alert_card)
+        
+        page.update()
+    
+    def create_alert(e):
+        """Crear nueva alerta"""
+        if not name_field.value or not metric_dropdown.value or not threshold_field.value:
+            status_text.value = "❌ Completa todos los campos"
+            status_text.color = RED_PRIMARY
+            page.update()
+            return
+        
+        try:
+            threshold = float(threshold_field.value)
+            alert_manager.create(
+                name=name_field.value,
+                metric=metric_dropdown.value,
+                operator=operator_dropdown.value,
+                threshold=threshold
+            )
+            
+            # Limpiar campos
+            name_field.value = ""
+            metric_dropdown.value = None
+            threshold_field.value = ""
+            
+            status_text.value = "✅ Alerta creada exitosamente"
+            status_text.color = GREEN_PRIMARY
+            refresh_alerts_list()
+        except ValueError:
+            status_text.value = "❌ Umbral debe ser un número"
+            status_text.color = RED_PRIMARY
+            page.update()
+    
+    def toggle_alert(alert_id: int):
+        """Alternar estado de alerta"""
+        alert_manager.toggle(alert_id)
+        refresh_alerts_list()
+    
+    def delete_alert(alert_id: int):
+        """Eliminar alerta"""
+        alert_manager.delete(alert_id)
+        status_text.value = "🗑️ Alerta eliminada"
+        status_text.color = YELLOW_PRIMARY
+        refresh_alerts_list()
+    
+    # Formulario de creación
+    form = ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.ADD_ALERT, color=GREEN_PRIMARY, size=20),
+                ft.Text("Nueva Alerta", size=16, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+            ]),
+            ft.Container(height=10),
+            ft.Row([name_field, metric_dropdown], spacing=15, wrap=True),
+            ft.Container(height=10),
+            ft.Row([operator_dropdown, threshold_field], spacing=15),
+            ft.Container(height=15),
+            ft.Row([
+                ft.ElevatedButton(
+                    "Crear Alerta",
+                    icon=ft.Icons.ADD,
+                    bgcolor=GREEN_PRIMARY,
+                    color=DARK_BG,
+                    on_click=create_alert,
+                ),
+                status_text,
+            ], spacing=15),
+        ]),
+        bgcolor=CARD_BG,
+        border_radius=15,
+        padding=20,
+    )
+    
+    # Inicializar lista
+    refresh_alerts_list()
+    
+    return ft.Container(
+        content=ft.Column([
+            create_crud_header("Alertas", "Configura notificaciones automáticas", ft.Icons.NOTIFICATIONS),
+            form,
+            ft.Container(height=20),
+            ft.Row([
+                ft.Icon(ft.Icons.LIST, color=BLUE_PRIMARY, size=20),
+                ft.Text("Alertas Activas", size=16, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                ft.Container(expand=True),
+                ft.IconButton(ft.Icons.REFRESH, icon_color=BLUE_PRIMARY, on_click=lambda e: refresh_alerts_list()),
+            ]),
+            ft.Container(height=10),
+            ft.Container(
+                content=alerts_list,
+                bgcolor=CARD_BG,
+                border_radius=15,
+                padding=15,
+                expand=True,
+            ),
+        ], scroll=ft.ScrollMode.AUTO),
+        padding=25,
+        expand=True,
+        bgcolor=DARK_BG,
+    )
+
+
+# ==================== VISTA DE PROCESOS ====================
+
+def build_processes_view(process_manager, page: ft.Page) -> ft.Container:
+    """Construir vista de gestión de procesos"""
+    
+    processes_table = ft.DataTable(
+        columns=[
+            ft.DataColumn(ft.Text("PID", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("Nombre", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("CPU %", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("RAM (MB)", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("Estado", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("Acción", color=TEXT_WHITE, size=12)),
+        ],
+        rows=[],
+        border=ft.border.all(1, "#3A3D4A"),
+        border_radius=10,
+        heading_row_color=SIDEBAR_BG,
+        data_row_color={"": CARD_BG, "hovered": "#2A2D3A"},
+        column_spacing=20,
+    )
+    
+    search_field = ft.TextField(
+        hint_text="🔍 Buscar proceso...",
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+        width=300,
+        height=40,
+        content_padding=ft.Padding(10, 0, 10, 0),
+    )
+    
+    sort_dropdown = ft.Dropdown(
+        value="cpu_percent",
+        options=[
+            ft.dropdown.Option("cpu_percent", "Mayor CPU"),
+            ft.dropdown.Option("memory_percent", "Mayor RAM"),
+            ft.dropdown.Option("pid", "PID"),
+            ft.dropdown.Option("name", "Nombre"),
+        ],
+        width=150,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+        height=40,
+    )
+    
+    stats_text = ft.Text("", size=12, color=TEXT_GRAY)
+    status_text = ft.Text("", size=12, color=GREEN_PRIMARY)
+    
+    def refresh_processes():
+        """Actualizar lista de procesos"""
+        process_manager.set_filter(search_field.value or "")
+        process_manager.set_sort(sort_dropdown.value, reverse=(sort_dropdown.value != "name"))
+        
+        processes = process_manager.get_all(limit=30)
+        stats = process_manager.get_stats()
+        
+        stats_text.value = f"Total: {stats['total']} | Running: {stats['running']} | Threads: {stats['threads']}"
+        
+        processes_table.rows.clear()
+        
+        for proc in processes:
+            cpu_color = RED_PRIMARY if proc.cpu_percent > 50 else (YELLOW_PRIMARY if proc.cpu_percent > 20 else TEXT_WHITE)
+            mem_color = RED_PRIMARY if proc.memory_mb > 500 else (YELLOW_PRIMARY if proc.memory_mb > 200 else TEXT_WHITE)
+            
+            status_colors = {
+                "running": GREEN_PRIMARY,
+                "sleeping": TEXT_GRAY,
+                "stopped": YELLOW_PRIMARY,
+                "zombie": RED_PRIMARY,
+            }
+            
+            row = ft.DataRow(
+                cells=[
+                    ft.DataCell(ft.Text(str(proc.pid), color=TEXT_GRAY, size=11)),
+                    ft.DataCell(ft.Text(proc.name[:25], color=TEXT_WHITE, size=11)),
+                    ft.DataCell(ft.Text(f"{proc.cpu_percent:.1f}", color=cpu_color, size=11)),
+                    ft.DataCell(ft.Text(f"{proc.memory_mb:.0f}", color=mem_color, size=11)),
+                    ft.DataCell(ft.Text(proc.status[:8], color=status_colors.get(proc.status, TEXT_GRAY), size=11)),
+                    ft.DataCell(
+                        ft.IconButton(
+                            ft.Icons.STOP_CIRCLE_OUTLINED,
+                            icon_color=RED_PRIMARY,
+                            icon_size=18,
+                            tooltip="Terminar proceso",
+                            on_click=lambda e, pid=proc.pid, name=proc.name: kill_process(pid, name),
+                        )
+                    ),
+                ],
+            )
+            processes_table.rows.append(row)
+        
+        page.update()
+    
+    def kill_process(pid: int, name: str):
+        """Terminar proceso"""
+        def confirm_kill(e):
+            if process_manager.terminate(pid):
+                status_text.value = f"✅ Proceso {name} (PID: {pid}) terminado"
+                status_text.color = GREEN_PRIMARY
+            else:
+                status_text.value = f"❌ No se pudo terminar {name} (permisos insuficientes)"
+                status_text.color = RED_PRIMARY
+            dialog.open = False
+            refresh_processes()
+        
+        def cancel(e):
+            dialog.open = False
+            page.update()
+        
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"¿Terminar proceso?", color=TEXT_WHITE),
+            content=ft.Text(f"¿Estás seguro de terminar '{name}' (PID: {pid})?", color=TEXT_GRAY),
+            actions=[
+                ft.TextButton("Cancelar", on_click=cancel),
+                ft.TextButton("Terminar", on_click=confirm_kill, style=ft.ButtonStyle(color=RED_PRIMARY)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+            bgcolor=CARD_BG,
+        )
+        
+        page.overlay.append(dialog)
+        dialog.open = True
+        page.update()
+    
+    def on_search_change(e):
+        refresh_processes()
+    
+    def on_sort_change(e):
+        refresh_processes()
+    
+    search_field.on_change = on_search_change
+    sort_dropdown.on_change = on_sort_change
+    
+    # Inicializar
+    refresh_processes()
+    
+    return ft.Container(
+        content=ft.Column([
+            create_crud_header("Procesos", "Monitorea y gestiona procesos del sistema", ft.Icons.MEMORY),
+            ft.Container(
+                content=ft.Row([
+                    search_field,
+                    sort_dropdown,
+                    ft.Container(expand=True),
+                    ft.IconButton(
+                        ft.Icons.REFRESH,
+                        icon_color=BLUE_PRIMARY,
+                        tooltip="Actualizar",
+                        on_click=lambda e: refresh_processes(),
+                    ),
+                ], spacing=15),
+                padding=ft.Padding(0, 0, 0, 10),
+            ),
+            ft.Row([stats_text, ft.Container(expand=True), status_text]),
+            ft.Container(height=10),
+            ft.Container(
+                content=ft.Column([processes_table], scroll=ft.ScrollMode.AUTO),
+                bgcolor=CARD_BG,
+                border_radius=15,
+                padding=15,
+                expand=True,
+            ),
+        ]),
+        padding=25,
+        expand=True,
+        bgcolor=DARK_BG,
+    )
+
+
+# ==================== VISTA DE HISTORIAL ====================
+
+def build_history_view(history_manager, page: ft.Page) -> ft.Container:
+    """Construir vista de historial de métricas"""
+    
+    summary_cards = ft.Row(spacing=15, wrap=True)
+    history_table = ft.DataTable(
+        columns=[
+            ft.DataColumn(ft.Text("Fecha/Hora", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("CPU %", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("Temp °C", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("RAM %", color=TEXT_WHITE, size=12)),
+            ft.DataColumn(ft.Text("Disco %", color=TEXT_WHITE, size=12)),
+        ],
+        rows=[],
+        border=ft.border.all(1, "#3A3D4A"),
+        border_radius=10,
+        heading_row_color=SIDEBAR_BG,
+        data_row_color={"": CARD_BG},
+        column_spacing=30,
+    )
+    
+    hours_dropdown = ft.Dropdown(
+        value="1",
+        options=[
+            ft.dropdown.Option("1", "Última hora"),
+            ft.dropdown.Option("6", "Últimas 6 horas"),
+            ft.dropdown.Option("24", "Últimas 24 horas"),
+            ft.dropdown.Option("168", "Última semana"),
+        ],
+        width=180,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+    )
+    
+    count_text = ft.Text("", size=12, color=TEXT_GRAY)
+    status_text = ft.Text("", size=12, color=GREEN_PRIMARY)
+    
+    def create_summary_card(title: str, value: str, icon: str, color: str) -> ft.Container:
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(icon, color=color, size=20),
+                    ft.Text(title, size=12, color=TEXT_GRAY),
+                ], spacing=5),
+                ft.Text(value, size=24, weight=ft.FontWeight.BOLD, color=color),
+            ], spacing=5),
+            bgcolor=CARD_BG,
+            border_radius=10,
+            padding=15,
+            width=140,
+        )
+    
+    def refresh_history():
+        """Actualizar historial"""
+        hours = int(hours_dropdown.value)
+        history = history_manager.get_history(hours=hours, limit=100)
+        summary = history_manager.get_summary(hours=hours)
+        count = history_manager.get_count()
+        
+        count_text.value = f"Total registros: {count}"
+        
+        # Actualizar resumen
+        summary_cards.controls.clear()
+        summary_cards.controls.extend([
+            create_summary_card(
+                "CPU Promedio", 
+                f"{summary.get('avg_cpu', 0) or 0:.1f}%",
+                ft.Icons.MEMORY, GREEN_PRIMARY
+            ),
+            create_summary_card(
+                "CPU Máximo", 
+                f"{summary.get('max_cpu', 0) or 0:.1f}%",
+                ft.Icons.TRENDING_UP, RED_PRIMARY
+            ),
+            create_summary_card(
+                "RAM Promedio", 
+                f"{summary.get('avg_ram', 0) or 0:.1f}%",
+                ft.Icons.STORAGE, BLUE_PRIMARY
+            ),
+            create_summary_card(
+                "Temp. Máxima", 
+                f"{summary.get('max_cpu_temp', 0) or 0:.0f}°C",
+                ft.Icons.THERMOSTAT, ORANGE_PRIMARY
+            ),
+        ])
+        
+        # Actualizar tabla
+        history_table.rows.clear()
+        for record in history[:50]:  # Mostrar últimos 50
+            row = ft.DataRow(cells=[
+                ft.DataCell(ft.Text(record.timestamp[:19], color=TEXT_GRAY, size=11)),
+                ft.DataCell(ft.Text(f"{record.cpu_usage or 0:.1f}", color=TEXT_WHITE, size=11)),
+                ft.DataCell(ft.Text(f"{record.cpu_temp or 0:.0f}", color=TEXT_WHITE, size=11)),
+                ft.DataCell(ft.Text(f"{record.ram_usage or 0:.1f}", color=TEXT_WHITE, size=11)),
+                ft.DataCell(ft.Text(f"{record.disk_usage or 0:.1f}", color=TEXT_WHITE, size=11)),
+            ])
+            history_table.rows.append(row)
+        
+        page.update()
+    
+    def cleanup_history(e):
+        """Limpiar historial antiguo"""
+        deleted = history_manager.cleanup(days=7)
+        status_text.value = f"🗑️ {deleted} registros antiguos eliminados"
+        status_text.color = YELLOW_PRIMARY
+        refresh_history()
+    
+    def on_hours_change(e):
+        refresh_history()
+    
+    hours_dropdown.on_change = on_hours_change
+    
+    # Inicializar
+    refresh_history()
+    
+    return ft.Container(
+        content=ft.Column([
+            create_crud_header("Historial", "Registros históricos de métricas del sistema", ft.Icons.HISTORY),
+            summary_cards,
+            ft.Container(height=20),
+            ft.Row([
+                hours_dropdown,
+                ft.Container(expand=True),
+                count_text,
+                ft.IconButton(ft.Icons.REFRESH, icon_color=BLUE_PRIMARY, on_click=lambda e: refresh_history()),
+                ft.IconButton(ft.Icons.DELETE_SWEEP, icon_color=RED_PRIMARY, tooltip="Limpiar antiguos", on_click=cleanup_history),
+            ], spacing=15),
+            status_text,
+            ft.Container(height=10),
+            ft.Container(
+                content=ft.Column([history_table], scroll=ft.ScrollMode.AUTO),
+                bgcolor=CARD_BG,
+                border_radius=15,
+                padding=15,
+                expand=True,
+            ),
+        ], scroll=ft.ScrollMode.AUTO),
+        padding=25,
+        expand=True,
+        bgcolor=DARK_BG,
+    )
+
+
+# ==================== VISTA DE CONFIGURACIÓN ====================
+
+def build_config_view(db, page: ft.Page) -> ft.Container:
+    """Construir vista de configuración"""
+    
+    config = db.get_all_config()
+    status_text = ft.Text("", size=12, color=GREEN_PRIMARY)
+    
+    # Campos de configuración
+    theme_dropdown = ft.Dropdown(
+        value=config.get('theme', 'dark'),
+        options=[
+            ft.dropdown.Option("dark", "Oscuro"),
+            ft.dropdown.Option("light", "Claro"),
+        ],
+        label="Tema",
+        width=200,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+    )
+    
+    interval_dropdown = ft.Dropdown(
+        value=config.get('update_interval', '1000'),
+        options=[
+            ft.dropdown.Option("500", "0.5 segundos"),
+            ft.dropdown.Option("1000", "1 segundo"),
+            ft.dropdown.Option("2000", "2 segundos"),
+            ft.dropdown.Option("5000", "5 segundos"),
+        ],
+        label="Intervalo de actualización",
+        width=200,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+    )
+    
+    retention_dropdown = ft.Dropdown(
+        value=config.get('history_retention_days', '7'),
+        options=[
+            ft.dropdown.Option("1", "1 día"),
+            ft.dropdown.Option("7", "7 días"),
+            ft.dropdown.Option("30", "30 días"),
+            ft.dropdown.Option("90", "90 días"),
+        ],
+        label="Retención de historial",
+        width=200,
+        bgcolor=CARD_BG,
+        border_color="#3A3D4A",
+        color=TEXT_WHITE,
+    )
+    
+    notifications_switch = ft.Switch(
+        value=config.get('enable_notifications', 'true') == 'true',
+        label="Notificaciones",
+        active_color=GREEN_PRIMARY,
+    )
+    
+    sounds_switch = ft.Switch(
+        value=config.get('enable_sounds', 'true') == 'true',
+        label="Sonidos",
+        active_color=GREEN_PRIMARY,
+    )
+    
+    def save_config(e):
+        """Guardar configuración"""
+        db.set_config('theme', theme_dropdown.value)
+        db.set_config('update_interval', interval_dropdown.value)
+        db.set_config('history_retention_days', retention_dropdown.value)
+        db.set_config('enable_notifications', 'true' if notifications_switch.value else 'false')
+        db.set_config('enable_sounds', 'true' if sounds_switch.value else 'false')
+        
+        status_text.value = "✅ Configuración guardada"
+        status_text.color = GREEN_PRIMARY
+        page.update()
+    
+    def reset_config(e):
+        """Resetear configuración"""
+        db.reset_config()
+        config = db.get_all_config()
+        
+        theme_dropdown.value = config.get('theme', 'dark')
+        interval_dropdown.value = config.get('update_interval', '1000')
+        retention_dropdown.value = config.get('history_retention_days', '7')
+        notifications_switch.value = config.get('enable_notifications', 'true') == 'true'
+        sounds_switch.value = config.get('enable_sounds', 'true') == 'true'
+        
+        status_text.value = "🔄 Configuración reseteada a valores por defecto"
+        status_text.color = YELLOW_PRIMARY
+        page.update()
+    
+    return ft.Container(
+        content=ft.Column([
+            create_crud_header("Configuración", "Personaliza tu experiencia", ft.Icons.SETTINGS),
+            
+            # Sección Apariencia
+            ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.PALETTE, color=PURPLE_PRIMARY, size=20),
+                        ft.Text("Apariencia", size=16, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                    ]),
+                    ft.Container(height=15),
+                    theme_dropdown,
+                ]),
+                bgcolor=CARD_BG,
+                border_radius=15,
+                padding=20,
+            ),
+            
+            ft.Container(height=15),
+            
+            # Sección Rendimiento
+            ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.SPEED, color=GREEN_PRIMARY, size=20),
+                        ft.Text("Rendimiento", size=16, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                    ]),
+                    ft.Container(height=15),
+                    ft.Row([interval_dropdown, retention_dropdown], spacing=20, wrap=True),
+                ]),
+                bgcolor=CARD_BG,
+                border_radius=15,
+                padding=20,
+            ),
+            
+            ft.Container(height=15),
+            
+            # Sección Notificaciones
+            ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.NOTIFICATIONS, color=ORANGE_PRIMARY, size=20),
+                        ft.Text("Notificaciones", size=16, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                    ]),
+                    ft.Container(height=15),
+                    ft.Row([notifications_switch, sounds_switch], spacing=30),
+                ]),
+                bgcolor=CARD_BG,
+                border_radius=15,
+                padding=20,
+            ),
+            
+            ft.Container(height=25),
+            
+            # Botones
+            ft.Row([
+                ft.ElevatedButton(
+                    "Guardar Cambios",
+                    icon=ft.Icons.SAVE,
+                    bgcolor=GREEN_PRIMARY,
+                    color=DARK_BG,
+                    on_click=save_config,
+                ),
+                ft.OutlinedButton(
+                    "Resetear",
+                    icon=ft.Icons.RESTART_ALT,
+                    style=ft.ButtonStyle(color=YELLOW_PRIMARY),
+                    on_click=reset_config,
+                ),
+                status_text,
+            ], spacing=15),
+        ], scroll=ft.ScrollMode.AUTO),
+        padding=25,
+        expand=True,
+        bgcolor=DARK_BG,
+    )

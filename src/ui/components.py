@@ -1,0 +1,350 @@
+import flet as ft
+
+# ============ COLORES DEL TEMA OSCURO ============
+DARK_BG = "#0D1117"           # Fondo principal oscuro
+CARD_BG = "#161B22"           # Fondo de tarjetas
+SIDEBAR_BG = "#0D1117"        # Fondo del sidebar
+SIDEBAR_HOVER = "#1A1F26"     # Hover en sidebar
+
+# Colores de acento
+GREEN_PRIMARY = "#4ADE80"     # Verde principal (CPU normal, éxito)
+BLUE_PRIMARY = "#60A5FA"      # Azul principal (enlaces, info)
+ORANGE_PRIMARY = "#FB923C"    # Naranja (GPU, advertencias)
+RED_PRIMARY = "#F87171"       # Rojo (errores, temperatura alta)
+YELLOW_PRIMARY = "#FBBF24"    # Amarillo (advertencias medias)
+PURPLE_PRIMARY = "#A78BFA"    # Púrpura (acentos)
+
+# Colores de texto
+TEXT_WHITE = "#FFFFFF"
+TEXT_GRAY = "#9CA3AF"
+TEXT_DARK_GRAY = "#6B7280"
+
+
+def create_circular_progress(value: float, color: str, size: int = 130) -> ft.Container:
+    """Crea un indicador de progreso circular con porcentaje en el centro"""
+    return ft.Container(
+        content=ft.Stack([
+            ft.ProgressRing(
+                value=value,
+                width=size,
+                height=size,
+                stroke_width=10,
+                color=color,
+                bgcolor="#2A2D3A",
+            ),
+        ]),
+        width=size,
+        height=size,
+        alignment=ft.alignment.Alignment(0, 0),
+    )
+
+
+def create_sidebar(on_change_callback) -> ft.Container:
+    """Crea la barra lateral de navegación estilo OmniMonitor"""
+    
+    nav_items = [
+        {"icon": ft.Icons.HOME_OUTLINED, "icon_selected": ft.Icons.HOME, "label": "Resumen"},
+        {"icon": ft.Icons.MEMORY_OUTLINED, "icon_selected": ft.Icons.MEMORY, "label": "CPU"},
+        {"icon": ft.Icons.STORAGE_OUTLINED, "icon_selected": ft.Icons.STORAGE, "label": "RAM"},
+        {"icon": ft.Icons.DISC_FULL_OUTLINED, "icon_selected": ft.Icons.DISC_FULL, "label": "Disco"},
+        {"icon": ft.Icons.WIFI_OUTLINED, "icon_selected": ft.Icons.WIFI, "label": "Red"},
+        {"icon": ft.Icons.SETTINGS_OUTLINED, "icon_selected": ft.Icons.SETTINGS, "label": "Ajustes"},
+    ]
+    
+    nav_rail = ft.NavigationRail(
+        selected_index=0,
+        label_type=ft.NavigationRailLabelType.ALL,
+        min_width=80,
+        min_extended_width=180,
+        extended=True,
+        leading=ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(
+                        content=ft.Icon(ft.Icons.RADAR, color=BLUE_PRIMARY, size=28),
+                        width=40,
+                        height=40,
+                        border_radius=20,
+                        bgcolor=ft.Colors.with_opacity(0.1, BLUE_PRIMARY),
+                        alignment=ft.alignment.Alignment(0, 0),
+                    ),
+                    ft.Text("OmniMonitor", size=18, weight=ft.FontWeight.BOLD, color=TEXT_WHITE),
+                ], spacing=10, alignment=ft.MainAxisAlignment.START),
+            ]),
+            padding=ft.Padding(left=15, top=15, bottom=30, right=0),
+        ),
+        destinations=[
+            ft.NavigationRailDestination(
+                icon=item["icon"],
+                selected_icon=item["icon_selected"],
+                label=item["label"],
+            ) for item in nav_items
+        ],
+        on_change=on_change_callback,
+        bgcolor=SIDEBAR_BG,
+        indicator_color=ft.Colors.with_opacity(0.1, BLUE_PRIMARY),
+    )
+    
+    return ft.Container(
+        content=nav_rail,
+        width=180,
+        bgcolor=SIDEBAR_BG,
+        border=ft.border.only(right=ft.BorderSide(1, "#1E2130")),
+    )
+
+
+def create_header(title: str) -> ft.Container:
+    """Crea el encabezado con título e iconos de acción"""
+    return ft.Container(
+        content=ft.Row([
+            ft.Text(title, size=26, weight=ft.FontWeight.BOLD, color=TEXT_WHITE),
+            ft.Container(expand=True),
+            ft.Row([
+                ft.IconButton(
+                    icon=ft.Icons.LIGHT_MODE_OUTLINED,
+                    icon_color=TEXT_GRAY,
+                    icon_size=20,
+                    tooltip="Cambiar tema",
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.DARK_MODE_OUTLINED,
+                    icon_color=TEXT_GRAY,
+                    icon_size=20,
+                    tooltip="Modo oscuro",
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.NOTIFICATIONS_OUTLINED,
+                    icon_color=TEXT_GRAY,
+                    icon_size=20,
+                    tooltip="Notificaciones",
+                ),
+            ], spacing=0),
+        ]),
+    )
+
+
+def create_detail_button(on_click) -> ft.Container:
+    """Crea un botón 'Ver Detalles' estilizado"""
+    return ft.Container(
+        content=ft.Row([
+            ft.Text("Ver Detalles", size=12, color=TEXT_GRAY),
+            ft.Icon(ft.Icons.CHEVRON_RIGHT, color=TEXT_GRAY, size=16),
+        ], spacing=2),
+        on_click=on_click,
+        ink=True,
+        padding=ft.Padding(left=10, right=10, top=5, bottom=5),
+        border_radius=5,
+    )
+
+
+def create_cpu_card(cpu_name: ft.Text, progress_ring: ft.Container, 
+                    percent_text: ft.Text, temp_text: ft.Text, 
+                    speed_text: ft.Text, on_details_click) -> ft.Container:
+    """Crea la tarjeta de CPU con diseño circular"""
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.MEMORY, color=GREEN_PRIMARY, size=20),
+                cpu_name,
+            ], spacing=10),
+            ft.Container(height=15),
+            ft.Row([
+                ft.Stack([
+                    progress_ring,
+                    ft.Container(
+                        content=ft.Column([
+                            percent_text,
+                            ft.Text("Usage", size=12, color=TEXT_GRAY),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                        alignment=ft.alignment.Alignment(0, 0),
+                        width=130,
+                        height=130,
+                    ),
+                ]),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(height=15),
+            ft.Row([
+                temp_text,
+                ft.Container(width=10),
+                ft.Text("|", color=TEXT_DARK_GRAY),
+                ft.Container(width=10),
+                speed_text,
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(expand=True),
+            ft.Row([
+                ft.Container(expand=True),
+                create_detail_button(on_details_click),
+            ]),
+        ]),
+        bgcolor=CARD_BG,
+        border_radius=15,
+        padding=20,
+        border=ft.border.all(1, "#1E2130"),
+    )
+
+
+def create_ram_card(used_text: ft.Text, available_text: ft.Text,
+                    progress_bar: ft.ProgressBar, history_chart: ft.Container,
+                    on_details_click) -> ft.Container:
+    """Crea la tarjeta de RAM con barra de progreso y mini gráfico"""
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.MEMORY_OUTLINED, color=GREEN_PRIMARY, size=20),
+                ft.Text("RAM: DDR4", size=14, weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+                ft.Container(expand=True),
+                used_text,
+            ], spacing=10),
+            ft.Container(height=20),
+            ft.Column([
+                available_text,
+                ft.Container(height=8),
+                progress_bar,
+            ]),
+            ft.Container(height=15),
+            history_chart,
+            ft.Container(expand=True),
+            ft.Row([
+                ft.Container(expand=True),
+                create_detail_button(on_details_click),
+            ]),
+        ]),
+        bgcolor=CARD_BG,
+        border_radius=15,
+        padding=20,
+        border=ft.border.all(1, "#1E2130"),
+    )
+
+
+def create_gpu_card(gpu_name: ft.Text, progress_ring: ft.Container,
+                    percent_text: ft.Text, temp_text: ft.Text,
+                    on_details_click) -> ft.Container:
+    """Crea la tarjeta de GPU/Temperatura"""
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.VIDEOGAME_ASSET, color=ORANGE_PRIMARY, size=20),
+                gpu_name,
+            ], spacing=10),
+            ft.Container(height=10),
+            ft.Row([
+                ft.Stack([
+                    progress_ring,
+                    ft.Container(
+                        content=ft.Column([
+                            percent_text,
+                            ft.Text("Usage", size=11, color=TEXT_GRAY),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                        alignment=ft.alignment.Alignment(0, 0),
+                        width=100,
+                        height=100,
+                    ),
+                ]),
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(height=10),
+            ft.Row([
+                ft.Icon(ft.Icons.WARNING_AMBER, color=YELLOW_PRIMARY, size=16),
+                temp_text,
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=5),
+            ft.Container(expand=True),
+            ft.Row([
+                ft.Container(expand=True),
+                create_detail_button(on_details_click),
+            ]),
+        ]),
+        bgcolor=CARD_BG,
+        border_radius=15,
+        padding=20,
+        border=ft.border.all(1, "#1E2130"),
+    )
+
+
+def create_disk_card(disk_name: ft.Text, used_text: ft.Text,
+                     speed_text: ft.Text, progress_bar: ft.ProgressBar,
+                     on_details_click) -> ft.Container:
+    """Crea la tarjeta de disco con barra de progreso"""
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.STORAGE, color=BLUE_PRIMARY, size=20),
+                disk_name,
+            ], spacing=10),
+            ft.Container(height=15),
+            ft.Row([
+                ft.Column([
+                    ft.Container(
+                        content=progress_bar,
+                        width=280,
+                    ),
+                    ft.Container(height=8),
+                    used_text,
+                ], spacing=0),
+            ]),
+            ft.Container(height=10),
+            speed_text,
+            ft.Container(expand=True),
+            ft.Row([
+                ft.Container(expand=True),
+                create_detail_button(on_details_click),
+            ]),
+        ]),
+        bgcolor=CARD_BG,
+        border_radius=15,
+        padding=20,
+        border=ft.border.all(1, "#1E2130"),
+    )
+
+
+def create_network_chart_card(chart_container: ft.Container, 
+                               on_details_click) -> ft.Container:
+    """Crea la tarjeta grande del historial de red"""
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(ft.Icons.WIFI, color=BLUE_PRIMARY, size=20),
+                ft.Text("Historial de Red (Última Hora)", size=14, 
+                       weight=ft.FontWeight.W_500, color=TEXT_WHITE),
+            ], spacing=10),
+            ft.Container(height=10),
+            chart_container,
+        ]),
+        bgcolor=CARD_BG,
+        border_radius=15,
+        padding=20,
+        border=ft.border.all(1, "#1E2130"),
+    )
+
+
+def create_info_row(label: str, value: str, icon: str = None, 
+                    value_color: str = TEXT_WHITE) -> ft.Container:
+    """Crea una fila de información estilizada"""
+    row_content = [
+        ft.Text(label, size=13, color=TEXT_GRAY, width=120),
+        ft.Text(value, size=13, color=value_color, weight=ft.FontWeight.W_500),
+    ]
+    
+    if icon:
+        row_content.insert(0, ft.Icon(icon, color=value_color, size=16))
+    
+    return ft.Container(
+        content=ft.Row(row_content, spacing=10),
+        padding=ft.Padding(left=0, right=0, top=5, bottom=5),
+    )
+
+
+def create_stat_box(title: str, value: str, icon: str, 
+                    color: str = BLUE_PRIMARY) -> ft.Container:
+    """Crea una caja de estadística compacta"""
+    return ft.Container(
+        content=ft.Column([
+            ft.Row([
+                ft.Icon(icon, color=color, size=18),
+                ft.Text(title, size=11, color=TEXT_GRAY),
+            ], spacing=5),
+            ft.Text(value, size=20, weight=ft.FontWeight.BOLD, color=TEXT_WHITE),
+        ], spacing=5),
+        bgcolor=ft.Colors.with_opacity(0.5, CARD_BG),
+        border_radius=10,
+        padding=15,
+        border=ft.border.all(1, ft.Colors.with_opacity(0.3, color)),
+    )
